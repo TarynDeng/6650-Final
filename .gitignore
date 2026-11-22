@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (keep the folder and its README, not the files)
+data/*
+!data/README.md
+
+# Results, logs, and models (keep the folder and its README, not the files)
+results/*
+!results/README.md
+runs/
+wandb/
+ray_results/
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.npy
+*.npz
+
+# LaTeX build files
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+paper/*.toc
+paper/main.pdf
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

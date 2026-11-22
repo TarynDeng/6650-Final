@@ -1,0 +1,12 @@
+# Tentative dependencies. Versions are not pinned until the environment and
+# data source are chosen (see Open Decisions in README.md).
+numpy
+pandas
+gymnasium
+torch
+matplotlib
+yfinance            # candidate data source; may be replaced
+
+# Candidates under evaluation (uncomment once decided):
+# gym-trading-env   # existing Gymnasium trading environment
+# ray[rllib]        # if DQN uses RLlib instead of the HW-2 PyTorch code

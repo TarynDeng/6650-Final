@@ -1,0 +1,232 @@
+% =====================================================================
+% DSAN 6650 Final Project: Research Paper (4-6 pages)
+%
+% Skeleton only. Every TODO describes what the section should contain and
+% points to the matching part of docs/proposal.md.
+%
+% Build:   cd paper && latexmk -pdf main.tex
+% Clean:   latexmk -c
+%
+% Open decision: the course may require a specific template (e.g. NeurIPS,
+% IEEE, ACM). This file uses the plain article class until that is known;
+% the section structure carries over to any template.
+% =====================================================================
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[numbers]{natbib}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{figures/}}
+
+% Visible TODO marker; remove before submission.
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{TODO:} #1}}
+
+\title{Comparative Study of Shallow and Deep Reinforcement Learning\\
+Algorithms in Stock Trading with Performance-Based Weighted Ensemble}
+\author{\todo{Team member names}\\DSAN 6650, Georgetown University}
+\date{\todo{Submission date}}
+
+\begin{document}
+\maketitle
+
+% ---------------------------------------------------------------------
+\begin{abstract}
+\todo{150--200 words. Problem (shallow vs.\ deep RL in a common historical
+trading simulation), methods (Q-learning, SARSA, DQN, performance-weighted
+ensemble), data and split, headline results for RQ1--RQ4, and one-sentence
+takeaway. Write last.}
+\end{abstract}
+
+% ---------------------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+\todo{Motivation: trading as a controlled testbed for comparing RL
+algorithms, not as a goal in itself. State the four research questions
+(proposal Section 3) and list the contributions: unified historical-market
+benchmark, shallow vs.\ deep comparison with multiple seeds and
+out-of-sample testing, terminal-loss distribution, weighted ensemble.}
+
+% ---------------------------------------------------------------------
+\section{Background and Related Work}
+\label{sec:background}
+\todo{Brief MDP and TD-learning background; Q-learning~\cite{watkins1992q},
+SARSA~\cite{rummery1994online}, DQN~\cite{mnih2015human}; see
+\cite{sutton2018reinforcement}. A few sentences on prior RL-for-trading
+work and on policy ensembles.}
+
+% ---------------------------------------------------------------------
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Trading Environment}
+\todo{Data, one stock per episode, daily steps, no leverage, no short
+selling, transaction costs, observation vs.\ execution timing
+(proposal Sections 5.1--5.2).}
+
+\subsection{State and Action Spaces}
+\todo{State features and how they are discretized for the tabular methods
+(fit on training data only). The 9 discrete trade-sizing actions
+(proposal Sections 5.3--5.4); Table~\ref{tab:actions} can move to an
+appendix if space is tight.}
+
+\begin{table}[h]
+\centering
+\caption{Discrete trade-sizing actions (tentative).}
+\label{tab:actions}
+\begin{tabular}{cl@{\hskip 2em}cl}
+\toprule
+Action & Operation & Action & Operation \\
+\midrule
+0 & Hold & & \\
+1 & Buy with 25\% of cash & 5 & Sell 25\% of holdings \\
+2 & Buy with 50\% of cash & 6 & Sell 50\% of holdings \\
+3 & Buy with 75\% of cash & 7 & Sell 75\% of holdings \\
+4 & Buy with 100\% of cash & 8 & Sell 100\% of holdings \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reward}
+% Reconstructed from the outline; confirm with the team.
+The reward is the per-step log return of portfolio value $V_t$, with
+transaction costs reflected in $V_t$:
+\begin{equation}
+r_t = \ln\!\left(\frac{V_t}{V_{t-1}}\right), \qquad V_t > 0.
+\label{eq:reward}
+\end{equation}
+\todo{State the shared discount factor $\gamma$ and its relation to
+terminal return (proposal Section 5.5).}
+
+\subsection{Algorithms}
+\todo{Q-learning and SARSA update rules, $\epsilon$-greedy schedule; DQN
+architecture, experience replay, target network. Note the shared training
+budget in environment steps.}
+
+\subsection{Performance-Based Weighted Ensemble}
+% Reconstructed from the outline; confirm with the team.
+Weights are a softmax over each policy's mean validation terminal return
+$\bar{R}_i$ with temperature $\tau$:
+\begin{equation}
+w_i = \frac{\exp(\bar{R}_i/\tau)}{\sum_{j=1}^{N}\exp(\bar{R}_j/\tau)}.
+\label{eq:weights}
+\end{equation}
+At each step the ensemble takes the action with the highest weighted vote,
+\begin{equation}
+a_t^{\mathrm{ens}} = \arg\max_{a\in\mathcal{A}} \sum_{i=1}^{N} w_i\,
+\mathbf{1}\!\left[\pi_i(s_t)=a\right].
+\label{eq:vote}
+\end{equation}
+\todo{Each member acts on the ensemble's own account state; tie-breaking
+rule; equal-weight control ($w_i = 1/N$).}
+
+% ---------------------------------------------------------------------
+\section{Experimental Setup}
+\label{sec:setup}
+\todo{Stocks and data source; chronological split (train 2015--2021,
+validation 2022, test 2023--2025 as three 12-month windows; tentative);
+number of seeds; hyperparameters and how they were chosen (validation
+only); baselines incl.\ buy-and-hold (proposal Sections 6--7).}
+
+\paragraph{Metrics.}
+Terminal return $R_T = (V_T - V_0)/V_0$ and terminal loss
+$L_T = \max(0, -R_T)$, grouped into four categories (profit or break-even;
+loss in $(0, 20\%]$; $(20\%, 40\%]$; $> 40\%$). Terminal loss is measured at
+the end of each test window and is \emph{not} maximum drawdown.
+\todo{Learning efficiency, stability, and trading-behavior metrics
+(proposal Section 8).}
+
+% ---------------------------------------------------------------------
+\section{Results}
+\label{sec:results}
+
+\subsection{RQ1: Algorithm Performance}
+\todo{Mean / median terminal return by method and test window.}
+
+\begin{table}[h]
+\centering
+\caption{Out-of-sample terminal return (\%), mean $\pm$ std over seeds.
+\todo{fill in}}
+\label{tab:returns}
+\begin{tabular}{lccc}
+\toprule
+Method & 2023 & 2024 & 2025 \\
+\midrule
+Q-learning & -- & -- & -- \\
+SARSA & -- & -- & -- \\
+DQN & -- & -- & -- \\
+Weighted ensemble & -- & -- & -- \\
+Equal-weight ensemble & -- & -- & -- \\
+Buy-and-hold & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{RQ2: Terminal Loss Distribution}
+\todo{Counts per loss category (report zeros honestly) plus the continuous
+return distribution.}
+
+\begin{table}[h]
+\centering
+\caption{Terminal-loss category counts across test episodes. \todo{fill in}}
+\label{tab:loss}
+\begin{tabular}{lcccc}
+\toprule
+Method & Cat.~1 & Cat.~2 & Cat.~3 & Cat.~4 \\
+\midrule
+Q-learning & -- & -- & -- & -- \\
+SARSA & -- & -- & -- & -- \\
+DQN & -- & -- & -- & -- \\
+Weighted ensemble & -- & -- & -- & -- \\
+Equal-weight ensemble & -- & -- & -- & -- \\
+Buy-and-hold & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{RQ3: Learning Efficiency and Stability}
+\todo{Learning curves (return vs.\ environment steps); variability across
+seeds, stocks, and years.}
+
+\begin{figure}[h]
+\centering
+\fbox{\parbox[c][1.5in][c]{0.8\linewidth}{\centering
+\todo{Learning curves: return vs.\ environment steps, mean $\pm$ std over
+seeds.}}}
+\caption{Learning curves. \todo{replace placeholder with
+\texttt{\textbackslash includegraphics}}}
+\label{fig:learning}
+\end{figure}
+
+\subsection{RQ4: Weighted Ensemble}
+\todo{Weighted vs.\ equal-weight ensemble vs.\ best single algorithm on
+return, terminal loss, and stability.}
+
+\subsection{Trading Behavior}
+\todo{Action-frequency breakdown, number of trades, fees, example
+portfolio-value curves.}
+
+% ---------------------------------------------------------------------
+\section{Discussion and Limitations}
+\label{sec:discussion}
+\todo{Interpretation; limitations such as few stocks, single-asset
+episodes, simulated execution, seeds on the same market window not being
+independent samples, no claim of convergence to the optimal policy.}
+
+% ---------------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+\todo{Answer RQ1--RQ4 in one or two sentences each; future work
+(e.g.\ DQN on discrete states, more assets).}
+
+% ---------------------------------------------------------------------
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
