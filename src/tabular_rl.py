@@ -1,68 +1,142 @@
 """Tabular RL: state discretization, Q-learning, and SARSA.
 
-See ``docs/proposal.md`` Sections 4 and 5.3. Builds on HW-1.
+See ``docs/proposal.md`` Sections 4 and 5.3. Builds on HW-1. Default
+settings live in ``src/config.py`` (``TabularConfig``).
 
-Rules the implementation must respect:
-    * Discretization boundaries (bins) are fit on the training split only,
-      then reused unchanged for validation and test.
-    * Use epsilon-greedy exploration during training and greedy actions for
+Rules the implementation respects:
+    * Discretization bins are fit on the training split only, then reused
+      unchanged for validation and test.
+    * Epsilon-greedy exploration during training; greedy actions for
       evaluation.
     * Q-learning is off-policy (max over next actions); SARSA is on-policy
       (uses the next action actually taken).
-    * The discount factor gamma must be the same for every algorithm.
-    * Record the random seed and the number of environment steps for every
-      run, so learning curves are comparable with DQN.
+    * The discount factor gamma is shared with DQN (``TrainConfig.gamma``).
 
-Still open: which features to discretize, the number of bins per feature,
-and the resulting size of the state space.
+All agents in this project share one interface, used by ``src/training.py``
+and ``src/evaluation.py``:
+
+    act(obs, explore)                         -> action
+    update(obs, action, reward, next_obs, next_action, terminated)
+    set_epsilon(epsilon)
+    snapshot() / restore(snapshot)            # copy of the learned values
+    save(path) / load(path)
+
+``obs`` is always the raw observation from ``TradingEnv``; each agent applies
+its own preprocessing (here: the discretizer).
 """
 
 from __future__ import annotations
 
+import pickle
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from .config import TabularConfig
+from .environment import MARKET_FEATURES, N_ACTIONS
+
 
 class StateDiscretizer:
-    """Map continuous state features to a discrete state index.
+    """Map an observation to a single integer state.
 
-    TODO: ``fit`` learns bin edges from training data only; ``transform``
-    maps an observation to an integer state.
+    Each market feature is cut into quantile bins whose edges come from the
+    training split only. The position fraction (0 to 1) is rounded to one of
+    ``n_position_levels`` evenly spaced levels.
     """
 
-    def fit(self, train_features):
-        raise NotImplementedError
+    def __init__(self, n_bins=(3, 3, 3), n_position_levels=5):
+        self.n_bins = tuple(n_bins)
+        self.n_position_levels = n_position_levels
+        self.edges: list[np.ndarray] | None = None
 
-    def transform(self, observation):
-        raise NotImplementedError
+    @property
+    def n_states(self) -> int:
+        return int(np.prod(self.n_bins) * self.n_position_levels)
+
+    def fit(self, train_features: pd.DataFrame) -> "StateDiscretizer":
+        self.edges = []
+        for name, n in zip(MARKET_FEATURES, self.n_bins):
+            qs = np.linspace(0, 1, n + 1)[1:-1]  # interior quantiles
+            self.edges.append(np.quantile(train_features[name].to_numpy(), qs))
+        return self
+
+    def transform(self, obs) -> int:
+        if self.edges is None:
+            raise RuntimeError("Call fit() on the training split first")
+        idx = [int(np.searchsorted(e, obs[i], side="right")) for i, e in enumerate(self.edges)]
+        pos = float(np.clip(obs[len(MARKET_FEATURES)], 0.0, 1.0))
+        idx.append(int(round(pos * (self.n_position_levels - 1))))
+        return int(np.ravel_multi_index(idx, self.n_bins + (self.n_position_levels,)))
 
 
-class QLearningAgent:
-    """Tabular Q-learning (off-policy TD control).
+class _TabularAgent:
+    """Shared Q-table, epsilon-greedy policy, and persistence."""
 
-    TODO: Q-table, epsilon-greedy ``act``, ``update`` with the max over next
-    actions, ``train`` loop, ``greedy_action`` for evaluation, save / load.
-    """
+    name = "tabular"
 
-    def __init__(self, n_states, n_actions, *, alpha, gamma, epsilon, seed=None):
-        raise NotImplementedError
+    def __init__(self, discretizer: StateDiscretizer, *, gamma: float,
+                 cfg: TabularConfig = TabularConfig(), seed: int | None = None):
+        self.disc = discretizer
+        self.gamma = gamma
+        self.cfg = cfg
+        self.alpha = cfg.alpha
+        self.epsilon = cfg.epsilon_start
+        self.rng = np.random.default_rng(seed)
+        self.q = np.zeros((discretizer.n_states, N_ACTIONS))
 
-    def act(self, state, explore=True):
-        raise NotImplementedError
+    def set_epsilon(self, epsilon: float) -> None:
+        self.epsilon = epsilon
 
-    def update(self, state, action, reward, next_state, done):
-        raise NotImplementedError
+    def act(self, obs, explore: bool = True) -> int:
+        s = self.disc.transform(obs)
+        if explore and self.rng.random() < self.epsilon:
+            return int(self.rng.integers(N_ACTIONS))
+        q = self.q[s]
+        if explore:  # random tie-break while learning
+            return int(self.rng.choice(np.flatnonzero(q == q.max())))
+        return int(np.argmax(q))  # deterministic: lowest index (Hold) on ties
+
+    def _td_update(self, obs, action, target: float) -> None:
+        s = self.disc.transform(obs)
+        self.q[s, action] += self.alpha * (target - self.q[s, action])
+
+    def snapshot(self):
+        return self.q.copy()
+
+    def restore(self, snapshot) -> None:
+        self.q = snapshot.copy()
+
+    def save(self, path) -> None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump({"q": self.q, "edges": self.disc.edges, "n_bins": self.disc.n_bins,
+                         "n_position_levels": self.disc.n_position_levels,
+                         "gamma": self.gamma}, f)
+
+    def load(self, path) -> None:
+        with open(path, "rb") as f:
+            d = pickle.load(f)
+        self.q, self.disc.edges = d["q"], d["edges"]
 
 
-class SarsaAgent:
-    """Tabular SARSA (on-policy TD control).
+class QLearningAgent(_TabularAgent):
+    """Tabular Q-learning (off-policy TD control)."""
 
-    TODO: same interface as ``QLearningAgent``, but ``update`` uses the next
-    action chosen by the behavior policy.
-    """
+    name = "qlearning"
 
-    def __init__(self, n_states, n_actions, *, alpha, gamma, epsilon, seed=None):
-        raise NotImplementedError
+    def update(self, obs, action, reward, next_obs, next_action, terminated) -> None:
+        bootstrap = 0.0 if terminated else self.gamma * self.q[self.disc.transform(next_obs)].max()
+        self._td_update(obs, action, reward + bootstrap)
 
-    def act(self, state, explore=True):
-        raise NotImplementedError
 
-    def update(self, state, action, reward, next_state, next_action, done):
-        raise NotImplementedError
+class SarsaAgent(_TabularAgent):
+    """Tabular SARSA (on-policy TD control)."""
+
+    name = "sarsa"
+
+    def update(self, obs, action, reward, next_obs, next_action, terminated) -> None:
+        bootstrap = 0.0
+        if not terminated:
+            bootstrap = self.gamma * self.q[self.disc.transform(next_obs), next_action]
+        self._td_update(obs, action, reward + bootstrap)
