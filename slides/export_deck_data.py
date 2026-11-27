@@ -1,11 +1,13 @@
 """Collect every number the slide deck shows into slides/deck_data.json.
 
-Run after the three experiment phases:
+Needs the committed results/ tables and logs (or a fresh run of the three
+experiment phases):
     python slides/export_deck_data.py
-    node slides/build_deck.js
+    cd slides && npm install && npm run build
 """
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,63 +15,97 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from src.environment import load_ticker  # noqa: E402
+from src.config import ExperimentConfig  # noqa: E402
 
 RES = ROOT / "results"
 T = RES / "tables"
 METHODS = ["buy_and_hold", "qlearning", "sarsa", "dqn", "weighted_ens", "equal_ens"]
+AGENTS = ["qlearning", "sarsa", "dqn"]
 LABELS = {"buy_and_hold": "Buy-and-hold", "qlearning": "Q-learning", "sarsa": "SARSA",
           "dqn": "DQN", "weighted_ens": "Weighted ens.", "equal_ens": "Equal-weight ens."}
 
-manifest = json.loads((RES / "run_manifest.json").read_text())
-summary = pd.read_csv(T / "phase3_summary_by_method.csv").set_index("method").reindex(METHODS)
-by_ticker = pd.read_csv(T / "phase3_summary_by_ticker.csv").set_index(["method", "ticker"])
-paired = pd.read_csv(T / "phase3_paired_comparisons.csv")
-behavior = pd.read_csv(T / "phase3_trading_behavior.csv").set_index("method").reindex(METHODS)
-weights = pd.read_csv(T / "phase2_weights.csv").query("method == 'weighted_ens'")
-val1 = pd.read_csv(T / "phase1_val.csv")
 
-tickers = manifest["tickers"]
-data = {
-    "commit": manifest["git_commit"], "tickers": tickers, "seeds": manifest["seeds"],
-    "steps": manifest["total_env_steps"],
-    "methods": [LABELS[m] for m in METHODS],
-    "mean_return": [round(100 * summary.loc[m, "mean"], 1) for m in METHODS],
-    "seed_std": [None if pd.isna(summary.loc[m, "seed_std"]) else round(100 * summary.loc[m, "seed_std"], 1)
-                 for m in METHODS],
-    "loss_share": {f"cat{c}": [round(100 * summary.loc[m, f"share_cat{c}"], 1) for m in METHODS]
-                   for c in (1, 2, 3, 4)},
-    "by_ticker": {t: [round(100 * by_ticker.loc[(m, t), "mean"], 1) for m in METHODS] for t in tickers},
-    "trades": [round(behavior.loc[m, "n_trades"]) for m in METHODS],
-    "fees": [round(behavior.loc[m, "total_fees"]) for m in METHODS],
-    "hold_share": [round(100 * behavior.loc[m, "freq_a0"]) for m in METHODS],
-    "paired": [{"a": LABELS[r.method_a], "b": LABELS[r.method_b], "diff": round(100 * r.mean_diff, 1),
-                "wins": int(r.a_wins), "n": int(r.n_windows),
-                "lo": round(100 * r.ci_low, 1), "hi": round(100 * r.ci_high, 1)}
-               for r in paired.itertuples()],
-    "avg_weights": {a: round(float(weights[f"w_{a}"].mean()), 2) for a in ("qlearning", "sarsa", "dqn")},
-    "val_return": {LABELS[m]: round(100 * val1.query("method == @m")["terminal_return"].mean(), 1)
-                   for m in ("buy_and_hold", "qlearning", "sarsa", "dqn")},
-}
+def pct(x) -> float:
+    return round(100 * float(x), 1)
 
-# Learning curves: mean validation return over seeds, per algorithm, for each ticker.
-curves = {}
-for t in tickers:
-    logs = pd.concat([pd.read_csv(RES / "logs" / f"{a}_{t}_seed{s}.csv")
-                      for a in ("qlearning", "sarsa", "dqn") for s in manifest["seeds"]])
-    ev = logs.dropna(subset=["eval_return"])
-    g = ev.groupby(["algo", "env_step"])["eval_return"].mean().unstack("algo")
-    curves[t] = {"steps": [int(x) for x in g.index],
-                 **{LABELS[a]: [round(100 * v, 1) for v in g[a]] for a in ("qlearning", "sarsa", "dqn")}}
-data["curves"] = curves
 
-# Example year: buy-and-hold price path of each ticker in each test year (for context).
-yearly = {}
-for t in tickers:
-    splits = load_ticker(t)
-    yearly[t] = [round(100 * (d["Close"].iloc[-1] / d["Close"].iloc[0] - 1), 1) for d in splits["test"]]
-data["stock_year_returns"] = yearly
+def count_tests() -> int:
+    out = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "tests"], cwd=ROOT,
+                         capture_output=True, text=True).stdout
+    return sum(1 for line in out.splitlines() if "::" in line)
 
-(ROOT / "slides" / "deck_data.json").write_text(json.dumps(data, indent=1))
-print(json.dumps({k: data[k] for k in ("mean_return", "seed_std", "avg_weights", "val_return",
-                                       "stock_year_returns", "trades", "fees", "hold_share")}, indent=1))
+
+def summary_fields(summary, behavior, test) -> dict:
+    bh = test.query("method == 'buy_and_hold'")
+    return {
+        "methods": [LABELS[m] for m in METHODS],
+        "mean_return": [pct(summary.loc[m, "mean"]) for m in METHODS],
+        "seed_std": [None if pd.isna(summary.loc[m, "seed_std"]) else pct(summary.loc[m, "seed_std"])
+                     for m in METHODS],
+        "loss_share": {f"cat{c}": [pct(summary.loc[m, f"share_cat{c}"]) for m in METHODS]
+                       for c in (1, 2, 3, 4)},
+        "large_losses": int((test["loss_category"] >= 3).sum()),
+        "worst_loss": pct(test["terminal_loss"].max()),
+        "falling_stock_years": [f"{r.ticker} {r.window}" for r in bh.itertuples() if r.terminal_return < 0],
+        "trades": [round(behavior.loc[m, "n_trades"]) for m in METHODS],
+        "fees": [round(behavior.loc[m, "total_fees"]) for m in METHODS],
+        "avg_position": [pct(behavior.loc[m, "avg_position"]) for m in METHODS],
+    }
+
+
+def ensemble_fields(weights, val1, summary, sens) -> dict:
+    w = weights.query("method == 'weighted_ens'")
+    picks = w["top_member"].value_counts()
+    return {
+        "picks": {LABELS[a]: int(picks.get(a, 0)) for a in AGENTS},
+        "n_runs": len(w),
+        "follows_top": int(w["follows_top_member"].sum()),
+        "min_top_weight": round(float(w["top_weight"].min()), 2),
+        "val_by_ticker": {t: {LABELS[a]: pct(val1.query("method == @a and ticker == @t")
+                                             ["terminal_return"].mean())
+                              for a in ["buy_and_hold", *AGENTS]}
+                          for t in sorted(val1["ticker"].unique())},
+        "test_by_agent": {LABELS[a]: pct(summary.loc[a, "mean"]) for a in AGENTS},
+        "tiebreak": {r: pct(sens.loc[r, "mean"]) for r in sens.index},
+    }
+
+
+def curves(manifest) -> dict:
+    out = {}
+    for t in manifest["tickers"]:
+        logs = pd.concat([pd.read_csv(RES / "logs" / f"{a}_{t}_seed{s}.csv")
+                          for a in AGENTS for s in manifest["seeds"]])
+        g = logs.dropna(subset=["eval_return"]).groupby(["algo", "env_step"])["eval_return"].mean()
+        g = g.unstack("algo")
+        out[t] = {"steps": [int(x) for x in g.index], **{LABELS[a]: [pct(v) for v in g[a]] for a in AGENTS}}
+    return out
+
+
+def main() -> None:
+    manifest = json.loads((RES / "run_manifest.json").read_text())
+    summary = pd.read_csv(T / "phase3_summary_by_method.csv", index_col="method").reindex(METHODS)
+    behavior = pd.read_csv(T / "phase3_trading_behavior.csv", index_col="method").reindex(METHODS)
+    test = pd.read_csv(T / "phase3_test.csv")
+    paired = pd.read_csv(T / "phase3_paired_comparisons.csv")
+    cfg = ExperimentConfig()
+    data = {
+        "commit": manifest["git_commit"].replace("-dirty", ""), "tickers": manifest["tickers"],
+        "seeds": manifest["seeds"], "steps": manifest["total_env_steps"],
+        "n_stock_years": int(summary.loc["qlearning", "n_windows"]), "n_tests": count_tests(),
+        "config": {"fee_pct": 100 * cfg.env.fee_rate, "cash": cfg.env.initial_cash,
+                   "episode_len": cfg.env.train_episode_len, "gamma": cfg.train.gamma,
+                   "temperature": cfg.ensemble.temperature, "hidden": list(cfg.dqn.hidden_sizes),
+                   "n_states": int(pd.Series(cfg.tabular.n_bins).prod() * cfg.tabular.n_position_levels)},
+        **summary_fields(summary, behavior, test),
+        **ensemble_fields(pd.read_csv(T / "phase2_weights.csv"), pd.read_csv(T / "phase1_val.csv"),
+                          summary, pd.read_csv(T / "phase2_tiebreak_sensitivity.csv", index_col="tie_break")),
+        "paired": [{"a": LABELS[r.method_a], "b": LABELS[r.method_b], "diff": pct(r.mean_diff),
+                    "wins": int(r.a_wins), "n": int(r.n_windows)} for r in paired.itertuples()],
+        "curves": curves(manifest),
+    }
+    (ROOT / "slides" / "deck_data.json").write_text(json.dumps(data, indent=1))
+    print(f"Wrote slides/deck_data.json ({data['n_tests']} tests, commit {data['commit']})")
+
+
+if __name__ == "__main__":
+    main()

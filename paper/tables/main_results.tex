@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{Test years 2023--2025: terminal return in percent, mean and median over the 9 stock-years after averaging seeds; spread across seeds (std, percentage points); share of episodes ending with a loss; trades and fees (\$) per year; average share of capital held in stock.}
+\label{tab:main}
+\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+Method & Mean & Median & Seed std & Loss share & Trades & Fees & In stock \\
+\midrule
+Buy-and-hold & $+25.8$ & $+29.5$ & -- & 11.1 & 1 & 10 & 100.0 \\
+Q-learning & $+18.5$ & $+23.9$ & 6.0 & 24.4 & 86 & 309 & 82.6 \\
+SARSA & $+6.9$ & $+11.0$ & 3.8 & 26.7 & 99 & 351 & 40.0 \\
+DQN & $+7.4$ & $+4.5$ & 10.2 & 26.7 & 153 & 414 & 44.8 \\
+Weighted ensemble & $+8.0$ & $+9.5$ & 9.6 & 20.0 & 125 & 382 & 51.8 \\
+Equal-weight ensemble & $+17.1$ & $+18.2$ & 6.7 & 26.7 & 95 & 287 & 75.3 \\
+\bottomrule
+\end{tabular}
+\end{table}

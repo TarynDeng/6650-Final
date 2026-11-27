@@ -1,15 +1,16 @@
 % =====================================================================
 % DSAN 6650 Final Project: Research Paper (4-6 pages)
 %
-% Skeleton only. Every TODO describes what the section should contain and
-% points to the matching part of docs/proposal.md.
+% Methods and setup describe the implemented code (src/config.py holds every
+% setting). Result tables and figures are generated from results/ by
+%   python paper/make_assets.py
+% Red TODOs mark the prose the team still has to write.
 %
 % Build:   cd paper && latexmk -pdf main.tex
 % Clean:   latexmk -c
 %
-% Open decision: the course may require a specific template (e.g. NeurIPS,
-% IEEE, ACM). This file uses the plain article class until that is known;
-% the section structure carries over to any template.
+% Open decision: the course may require a template (e.g. NeurIPS, IEEE,
+% ACM). This file uses the plain article class until that is known.
 % =====================================================================
 \documentclass[11pt]{article}
 
@@ -38,47 +39,59 @@ Algorithms in Stock Trading with Performance-Based Weighted Ensemble}
 
 % ---------------------------------------------------------------------
 \begin{abstract}
-\todo{150--200 words. Problem (shallow vs.\ deep RL in a common historical
-trading simulation), methods (Q-learning, SARSA, DQN, performance-weighted
-ensemble), data and split, headline results for RQ1--RQ4, and one-sentence
-takeaway. Write last.}
+\todo{150--200 words, written last: the question (shallow vs.\ deep RL under
+identical conditions), methods (Q-learning, SARSA, DQN, a validation-weighted
+and an equal-weight ensemble), data (3 stocks, train 2015--2021, validation
+2022, test 2023--2025), the main results from Tables~\ref{tab:main}
+and~\ref{tab:paired}, and the main limitation (9 correlated stock-years).}
 \end{abstract}
 
 % ---------------------------------------------------------------------
 \section{Introduction}
 \label{sec:intro}
-\todo{Motivation: trading as a controlled testbed for comparing RL
-algorithms, not as a goal in itself. State the four research questions
-(proposal Section 3) and list the contributions: unified historical-market
-benchmark, shallow vs.\ deep comparison with multiple seeds and
-out-of-sample testing, terminal-loss distribution, weighted ensemble.}
-
-% ---------------------------------------------------------------------
-\section{Background and Related Work}
-\label{sec:background}
-\todo{Brief MDP and TD-learning background; Q-learning~\cite{watkins1992q},
-SARSA~\cite{rummery1994online}, DQN~\cite{mnih2015human}; see
-\cite{sutton2018reinforcement}. A few sentences on prior RL-for-trading
-work and on policy ensembles.}
+\todo{Motivation: trading as a controlled, noisy testbed for comparing RL
+algorithms, not a goal in itself. The four research questions: RQ1
+performance, RQ2 terminal losses, RQ3 learning and stability across seeds,
+RQ4 the weighted ensemble. Related work in two or three sentences:
+Q-learning~\cite{watkins1992q}, SARSA~\cite{rummery1994online},
+DQN~\cite{mnih2015human}, see~\cite{sutton2018reinforcement}; RL for trading
+\cite{moody2001learning,deng2017deep}; ensembles of DRL trading agents
+selected by validation performance~\cite{yang2020ensemble}.}
 
 % ---------------------------------------------------------------------
 \section{Methods}
 \label{sec:methods}
 
-\subsection{Trading Environment}
-\todo{Data, one stock per episode, daily steps, no leverage, no short
-selling, transaction costs, observation vs.\ execution timing
-(proposal Sections 5.1--5.2).}
+\subsection{Data and Trading Environment}
+We use daily split- and dividend-adjusted prices from Yahoo Finance for
+AAPL, JPM and XOM (technology, banking, energy). The price files are
+committed with checksums, because the provider re-adjusts history over time.
+An episode trades one stock starting from \$10{,}000 in cash, with no
+leverage and no short selling, and a 0.1\% fee on every trade. On day $t$
+the agent observes features computed from closes up to $t$, its order fills
+at the close of day $t$, and the portfolio is valued at the close of day
+$t+1$, so no future information is used.
 
-\subsection{State and Action Spaces}
-\todo{State features and how they are discretized for the tabular methods
-(fit on training data only). The 9 discrete trade-sizing actions
-(proposal Sections 5.3--5.4); Table~\ref{tab:actions} can move to an
-appendix if space is tight.}
+\subsection{State, Actions and Reward}
+The observation is the 5-day and 20-day log return, the 20-day volatility
+of daily log returns, and the share of the portfolio held in stock. The
+tabular agents cut each market feature into 3 quantile bins fitted on the
+training years and the position share into 5 levels (135 states); DQN uses
+the four numbers, standardized with training-year statistics. The 9 actions
+(Table~\ref{tab:actions}) choose direction and size together. The reward is
+the daily log return of the portfolio value $V_t$ (cash plus shares, after
+fees):
+\begin{equation}
+r_t = \ln\!\left(\frac{V_{t+1}}{V_t}\right).
+\label{eq:reward}
+\end{equation}
+The undiscounted rewards of an episode sum to $\ln(V_T/V_0)$; the agents
+maximize the discounted sum with $\gamma = 0.99$, an effective horizon of
+about 100 trading days.
 
-\begin{table}[h]
+\begin{table}[t]
 \centering
-\caption{Discrete trade-sizing actions (tentative).}
+\caption{Discrete trade-sizing actions.}
 \label{tab:actions}
 \begin{tabular}{cl@{\hskip 2em}cl}
 \toprule
@@ -93,137 +106,97 @@ Action & Operation & Action & Operation \\
 \end{tabular}
 \end{table}
 
-\subsection{Reward}
-% Reconstructed from the outline; confirm with the team.
-The reward is the per-step log return of portfolio value $V_t$, with
-transaction costs reflected in $V_t$:
-\begin{equation}
-r_t = \ln\!\left(\frac{V_t}{V_{t-1}}\right), \qquad V_t > 0.
-\label{eq:reward}
-\end{equation}
-\todo{State the shared discount factor $\gamma$ and its relation to
-terminal return (proposal Section 5.5).}
+\subsection{Algorithms and Training}
+Q-learning and SARSA use a step size of 0.05. DQN uses a 64--64 ReLU
+network, a 50{,}000-transition replay buffer, minibatches of 64, a learning
+rate of $5\times10^{-4}$ and a soft target-network update with rate 0.005,
+following our homework implementation. All three share one training loop:
+100{,}000 environment steps per run, episodes that are random 252-day windows
+of 2015--2021, $\epsilon$ decaying linearly from 1.0 to 0.05 over the first
+half of training, and 5 random seeds per stock. Every agent is evaluated
+with its final model; no hyperparameters were tuned.
 
-\subsection{Algorithms}
-\todo{Q-learning and SARSA update rules, $\epsilon$-greedy schedule; DQN
-architecture, experience replay, target network. Note the shared training
-budget in environment steps.}
-
-\subsection{Performance-Based Weighted Ensemble}
-% Reconstructed from the outline; confirm with the team.
-Weights are a softmax over each policy's mean validation terminal return
-$\bar{R}_i$ with temperature $\tau$:
+\subsection{Ensembles}
+Each member's weight is a softmax over its terminal return $R_i$ on the 2022
+validation year, with temperature $T = 0.05$:
 \begin{equation}
-w_i = \frac{\exp(\bar{R}_i/\tau)}{\sum_{j=1}^{N}\exp(\bar{R}_j/\tau)}.
-\label{eq:weights}
+w_i = \frac{\exp(R_i/T)}{\sum_{j}\exp(R_j/T)}, \qquad
+a_t = \arg\max_{a} \sum_{i} w_i\,\mathbf{1}\!\left[\pi_i(s_t)=a\right].
+\label{eq:ensemble}
 \end{equation}
-At each step the ensemble takes the action with the highest weighted vote,
-\begin{equation}
-a_t^{\mathrm{ens}} = \arg\max_{a\in\mathcal{A}} \sum_{i=1}^{N} w_i\,
-\mathbf{1}\!\left[\pi_i(s_t)=a\right].
-\label{eq:vote}
-\end{equation}
-\todo{Each member acts on the ensemble's own account state; tie-breaking
-rule; equal-weight control ($w_i = 1/N$).}
+Every member decides from the ensemble's own cash and position. Ties go to
+the action of the single highest-weight member, then to Hold, then to the
+lowest action number; this rule was fixed before any results were seen. The
+equal-weight ensemble ($w_i = 1/3$) is the control. With $T=0.05$ one member
+always received more than half the weight, so in our runs the weighted
+ensemble behaves exactly like the member that did best in 2022.
 
 % ---------------------------------------------------------------------
 \section{Experimental Setup}
 \label{sec:setup}
-\todo{Stocks and data source; chronological split (train 2015--2021,
-validation 2022, test 2023--2025 as three 12-month windows; tentative);
-number of seeds; hyperparameters and how they were chosen (validation
-only); baselines incl.\ buy-and-hold (proposal Sections 6--7).}
-
-\paragraph{Metrics.}
-Terminal return $R_T = (V_T - V_0)/V_0$ and terminal loss
-$L_T = \max(0, -R_T)$, grouped into four categories (profit or break-even;
-loss in $(0, 20\%]$; $(20\%, 40\%]$; $> 40\%$). Terminal loss is measured at
-the end of each test window and is \emph{not} maximum drawdown.
-\todo{Learning efficiency, stability, and trading-behavior metrics
-(proposal Section 8).}
+Training uses 2015--2021, the ensemble weights use 2022, and each of 2023,
+2024 and 2025 is a separate test year. One stock in one test year is a
+\emph{stock-year}; seeds are averaged within each stock-year because they
+repeat the same market, leaving 9 stock-years, which are themselves
+correlated within a year. We report terminal return $R_T=(V_T-V_0)/V_0$,
+the terminal-loss category at the end of each test year (profit or
+break-even; loss up to 20\%; 20--40\%; over 40\%), which is \emph{not} the
+maximum drawdown, the spread across seeds, and trading behavior (trades,
+fees, average share of capital in stock).
 
 % ---------------------------------------------------------------------
 \section{Results}
 \label{sec:results}
 
-\subsection{RQ1: Algorithm Performance}
-\todo{Mean / median terminal return by method and test window.}
+\input{tables/main_results}
+\input{tables/paired}
 
-\begin{table}[h]
+\paragraph{RQ1 (performance).}
+\todo{From Table~\ref{tab:main} and~\ref{tab:paired}: no method beats
+buy-and-hold; Q-learning comes closest and beats DQN in most stock-years,
+but not on XOM; SARSA and DQN are about even. Explain with the average
+share of capital in stock and the fees.}
+
+\paragraph{RQ2 (terminal losses).}
+\todo{No episode lost more than 20\%; the agents lost in more episodes than
+buy-and-hold. Only XOM 2023 was a falling stock-year, so RQ2 needs more
+falling markets.}
+
+\paragraph{RQ3 (learning and stability).}
+\todo{Seed spread (Table~\ref{tab:main}) and Figure~\ref{fig:learning}: DQN
+varies most across seeds; validation curves do not improve steadily, and on
+XOM the tabular agents get worse with training.}
+
+\begin{figure}[t]
 \centering
-\caption{Out-of-sample terminal return (\%), mean $\pm$ std over seeds.
-\todo{fill in}}
-\label{tab:returns}
-\begin{tabular}{lccc}
-\toprule
-Method & 2023 & 2024 & 2025 \\
-\midrule
-Q-learning & -- & -- & -- \\
-SARSA & -- & -- & -- \\
-DQN & -- & -- & -- \\
-Weighted ensemble & -- & -- & -- \\
-Equal-weight ensemble & -- & -- & -- \\
-Buy-and-hold & -- & -- & -- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{RQ2: Terminal Loss Distribution}
-\todo{Counts per loss category (report zeros honestly) plus the continuous
-return distribution.}
-
-\begin{table}[h]
-\centering
-\caption{Terminal-loss category counts across test episodes. \todo{fill in}}
-\label{tab:loss}
-\begin{tabular}{lcccc}
-\toprule
-Method & Cat.~1 & Cat.~2 & Cat.~3 & Cat.~4 \\
-\midrule
-Q-learning & -- & -- & -- & -- \\
-SARSA & -- & -- & -- & -- \\
-DQN & -- & -- & -- & -- \\
-Weighted ensemble & -- & -- & -- & -- \\
-Equal-weight ensemble & -- & -- & -- & -- \\
-Buy-and-hold & -- & -- & -- & -- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{RQ3: Learning Efficiency and Stability}
-\todo{Learning curves (return vs.\ environment steps); variability across
-seeds, stocks, and years.}
-
-\begin{figure}[h]
-\centering
-\fbox{\parbox[c][1.5in][c]{0.8\linewidth}{\centering
-\todo{Learning curves: return vs.\ environment steps, mean $\pm$ std over
-seeds.}}}
-\caption{Learning curves. \todo{replace placeholder with
-\texttt{\textbackslash includegraphics}}}
+\includegraphics[width=\linewidth]{learning_curves}
+\caption{Return on the 2022 validation year during training (mean $\pm$
+std over 5 seeds). Dashed: buy-and-hold.}
 \label{fig:learning}
 \end{figure}
 
-\subsection{RQ4: Weighted Ensemble}
-\todo{Weighted vs.\ equal-weight ensemble vs.\ best single algorithm on
-return, terminal loss, and stability.}
-
-\subsection{Trading Behavior}
-\todo{Action-frequency breakdown, number of trades, fees, example
-portfolio-value curves.}
+\paragraph{RQ4 (ensemble).}
+\todo{The weighted ensemble copies the member that did best in 2022, which
+was rarely the best in 2023--2025; the equal-weight vote does much better.
+Report the tie-break sensitivity (results/tables/phase2\_tiebreak\_sensitivity.csv).}
 
 % ---------------------------------------------------------------------
 \section{Discussion and Limitations}
 \label{sec:discussion}
-\todo{Interpretation; limitations such as few stocks, single-asset
-episodes, simulated execution, seeds on the same market window not being
-independent samples, no claim of convergence to the optimal policy.}
+\todo{Interpretation, then these limitations: 9 correlated stock-years and a
+mostly rising test market; one validation year whose regime differed from
+the test years; no hyperparameter tuning; DQN sees continuous features while
+the tabular agents see 135 states, and DQN makes a 64-sample update per step
+versus one tabular update, so ``shallow vs.\ deep'' is confounded with
+representation and update budget; $\gamma=0.99$ optimizes a shorter horizon
+than the one-year metric; no bid-ask spread or price impact; no claim that
+any agent converged to an optimal policy.}
 
 % ---------------------------------------------------------------------
 \section{Conclusion}
 \label{sec:conclusion}
-\todo{Answer RQ1--RQ4 in one or two sentences each; future work
-(e.g.\ DQN on discrete states, more assets).}
+\todo{One sentence per research question; future work (more stocks and
+falling markets, tuning, DQN on the discrete states).}
 
 % ---------------------------------------------------------------------
 \bibliographystyle{plainnat}

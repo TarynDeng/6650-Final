@@ -24,10 +24,16 @@ RESULT_ITEMS = {"models", "logs", "tables", "figures", MANIFEST, "README.md", ".
 
 
 def git_commit() -> str:
-    """Short commit hash, with ``-dirty`` if there are uncommitted changes."""
+    """Short commit hash, with ``-dirty`` if files outside ``results/`` have uncommitted changes.
+
+    ``results/`` is excluded because a run rewrites its own committed tables.
+    """
+    def git(*cmd):
+        return subprocess.check_output(["git", *cmd], cwd=REPO_ROOT, text=True).strip()
+
     try:
-        return subprocess.check_output(["git", "describe", "--always", "--dirty"], cwd=REPO_ROOT,
-                                       text=True).strip()
+        dirty = git("status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)results")
+        return git("rev-parse", "--short", "HEAD") + ("-dirty" if dirty else "")
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 

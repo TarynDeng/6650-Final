@@ -6,6 +6,18 @@ DSAN 6650 (Reinforcement Learning), Final Project
 
 > **Status: draft.** This document is an English translation and reorganization of the team's original project outline. Items marked **(tentative)** are not final. Equations marked **(reconstructed)** were lost when the outline was exported to plain text; they have been rewritten in standard notation from the surrounding text, and **the team should confirm them**. Content marked *added during repo setup* is not in the original outline. The full list of open questions is in [Section 12](#12-open-decisions).
 
+> **Plan vs. implementation.** This document is the original plan and is kept as written. Where the implementation made a concrete choice, a note marked **Implemented** says what was built. The current defaults and their status are in the [README, Section 8](../README.md#8-decisions-and-their-status).
+>
+> | Plan | Implemented (placeholder defaults in `src/config.py`) |
+> |---|---|
+> | Existing trading environment such as Gym Trading Env | Small custom Gymnasium environment (`src/environment.py`), tested |
+> | About 3 stocks, 8–10 years | AAPL, JPM, XOM; Yahoo Finance adjusted prices, 2015–2025 (11 years), committed with checksums |
+> | Validation for limited hyperparameter selection and ensemble weights | Ensemble weights only; no hyperparameter tuning; every agent uses its final model |
+> | Cash and position fractions in the state | Position fraction only (cash fraction = 1 − position fraction) |
+> | Optional DQN-on-discrete-states control | Not run |
+> | Reward $r_t = \ln(V_t/V_{t-1})$ | Same reward, indexed as $r_t = \ln(V_{t+1}/V_t)$: the order fills at day $t$'s close and is valued at day $t+1$'s close |
+> | Discount factor, temperature τ, tie-break: open | γ = 0.99; temperature 0.05; ties → top-weight member, then Hold, then lowest action |
+
 ---
 
 ## Contents
@@ -72,6 +84,8 @@ DQN uses the basic structure taught in the course, including **experience replay
 
 The first preference is to evaluate an existing, Gymnasium-compatible historical stock-trading environment (for example, *Gym Trading Env*), and to avoid building a complex trading system from scratch.
 
+> **Implemented:** a small custom Gymnasium environment. Gym Trading Env's actions are target positions, not "buy x% of cash / sell x% of holdings" orders, and a short custom environment is easier to verify.
+
 The environment must support:
 
 - reading historical prices, volume, and related data;
@@ -84,7 +98,7 @@ The environment must support:
 
 ### 5.2 Stock Data
 
-- **Data length (tentative):** about 8–10 years of daily historical prices.
+- **Data length (tentative):** about 8–10 years of daily historical prices. *Implemented: 2015–2025, i.e. 11 years.*
 - **Number of stocks (tentative):** about 3, chosen to cover different market behaviors or sectors where possible.
 - **Simulation:** each episode trades a single stock; experiments are repeated across stocks and test windows.
 - **Trading scope:** no multi-stock portfolio allocation in the initial version.
@@ -108,6 +122,8 @@ Tabular Q-learning and SARSA use a **discretized** state. DQN may use **continuo
 
 **Optional control experiment:** additionally train DQN on the same discrete state encoding used by the tabular methods, to test whether the state representation changes the conclusions of the comparison.
 
+> **Implemented:** market features 5-day and 20-day log return and 20-day volatility; the portfolio feature is the position fraction only, because the cash fraction is 1 minus it. Tabular agents use 3 quantile bins per market feature (fit on training data) × 5 position levels = 135 states; DQN uses the four standardized numbers. The optional control experiment was not run.
+
 ### 5.4 Action Space
 
 So that the algorithms learn timing, direction, and size together, while staying compatible with the discrete-action setting of Q-learning, SARSA, and DQN, the initial design uses **Discrete Trade Sizing with 9 actions (tentative)**:
@@ -128,6 +144,8 @@ These percentages are **selectable trade-size levels**, not a predefined trading
 
 The environment computes the actual number of shares filled from the current price, cash, holdings, and fees. The initial rules are **no leverage and no short selling**. Still to be agreed: whether fractional shares are allowed, how share counts are rounded to integers, and how to handle an order when cash is insufficient to cover fees.
 
+> **Implemented:** fractional shares; a 0.1% fee on the traded value; orders fill at the day's close. A buy spends the chosen fraction of cash *including* the fee, so cash never goes negative; trades worth under one cent are skipped.
+
 ### 5.5 Reward Function
 
 The initial reward is the **per-step net log return of the portfolio value** **(reconstructed)**:
@@ -142,6 +160,8 @@ where $V_t$ is the portfolio value (cash plus the market value of holdings) at t
 - **Evaluation metrics:** the terminal investment return, terminal loss, and stability measures computed after the test period ends.
 
 The two are related but not the same. With discount factor $\gamma = 1$, the cumulative log return telescopes to $\sum_{t=1}^{T} r_t = \ln(V_T / V_0)$, which is a monotonic function of final portfolio growth; with $\gamma < 1$, the discounted return is no longer strictly equivalent **(reconstructed: the two cases were blank in the export and are assumed to be $\gamma = 1$ versus $\gamma < 1$)**. The training discount factor must be the same for all algorithms and stated in the report.
+
+> **Implemented:** the code writes the same reward as $r_t = \ln(V_{t+1}/V_t)$ (order at day $t$'s close, valuation at day $t+1$'s close), and uses γ = 0.99 for every algorithm, i.e. the "not strictly equivalent" case above.
 
 No maximum-drawdown penalty, terminal-loss penalty, risk-aversion coefficient, or hand-crafted stop-loss rule is added.
 
@@ -165,7 +185,7 @@ Where possible, the training budget is expressed in **environment steps**. Since
 
 Using the three trained policies, measure their performance on the **validation set** and use it to fix the ensemble weights.
 
-One simple scheme is a **softmax over the mean validation terminal return** **(reconstructed)**:
+One simple scheme is a **softmax over the mean validation terminal return** **(reconstructed)**. *Implemented: with one validation year, each member's "mean" is its single 2022 episode for that stock and seed; τ is fixed at 0.05 (called `temperature` in the code). In the runs, one member always got more than half the weight, so the weighted vote followed that member.*
 
 ```math
 w_i = \frac{\exp\left(\bar{R}_i / \tau\right)}{\sum_{j=1}^{N} \exp\left(\bar{R}_j / \tau\right)}, \qquad i = 1, \dots, N
@@ -214,7 +234,7 @@ Data are split **chronologically** to prevent data leakage. Tentative plan:
 | Split | Period (tentative) | Purpose |
 |-------|--------------------|---------|
 | Training | 2015–2021 | Train the RL algorithms |
-| Validation | 2022 | Select a limited set of hyperparameters; set the ensemble weights |
+| Validation | 2022 | Select a limited set of hyperparameters; set the ensemble weights *(implemented: ensemble weights only; no tuning)* |
 | Testing | 2023–2025 | Final out-of-sample comparison |
 
 The test period can be split into three fixed 12-month windows, e.g., 2023, 2024, and 2025. The 12-month length is a common evaluation horizon, not a research variable.
@@ -259,7 +279,7 @@ Each test episode is classified by its final outcome:
 
 > **Important: terminal loss is not maximum drawdown.** Only the loss at the end of the test window, relative to initial capital, is counted. The peak-to-trough maximum drawdown during the episode is **not** used as a substitute.
 
-If some loss categories do not occur in the test data, report a frequency of zero honestly, and also show the continuous return distribution. Do not construct artificial severe-loss cases.
+If some loss categories do not occur in the test data, report a frequency of zero honestly, and also show the continuous return distribution. *(Implemented so far: category shares and per-episode returns in `results/tables/phase3_test.csv`; a distribution plot is not produced yet.)* Do not construct artificial severe-loss cases.
 
 ### 8.3 Learning Efficiency
 
@@ -305,7 +325,7 @@ Based on the course project requirements as currently understood:
 3. **Presentation (10–15 minutes):** methods and main experimental findings. **Due 12/2.**
 4. **Private GitHub repository:** developed in the repository with its commit history kept.
 
-Suggested code layout:
+Suggested code layout (the original plan; the actual layout is in the [README, Section 5](../README.md#5-repository-layout)):
 
 ```
 6650-Final/
@@ -334,18 +354,20 @@ Suggested code layout:
 
 ## 12. Open Decisions
 
-- [ ] Historical data source, final stock list, and date range.
-- [ ] Choice of trading environment, and how it supports discrete trade sizing (native support or an action-adapter layer).
-- [ ] Whether to keep the 9 actions; integer vs. fractional shares; commission and execution-price rules (e.g., fill at the next day's open vs. the same day's close; *example added during repo setup*).
-- [ ] State features, discretization levels, and the size of the tabular state space.
-- [ ] Whether DQN uses the HW-2 PyTorch implementation or the course's RLlib.
-- [ ] Training budget, number of random seeds, and hyperparameter search ranges.
-- [ ] Weighted-ensemble temperature $\tau$ and the vote tie-breaking rule.
-- [ ] Team roles and the GitHub workflow.
-- [ ] *(added during repo setup)* Paper template required by the course (the LaTeX skeleton in `paper/` uses the plain `article` class) and slide software.
-- [ ] *(added during repo setup)* Discount factor $\gamma$ (must be shared across algorithms; see Section 5.5).
-- [ ] *(added during repo setup)* Repository visibility: the deliverables call for a **private** repository, but this repository is currently public. The repository owner should decide whether to make it private.
-- [ ] *(added during repo setup)* Confirm every equation marked **(reconstructed)** in this document.
+Each item now has a placeholder default in `src/config.py`; the current values and whether the team has confirmed them are tracked in the [README, Section 8](../README.md#8-decisions-and-their-status). The original list:
+
+- Historical data source, final stock list, and date range. *Default: yfinance; AAPL, JPM, XOM; 2015–2025.*
+- Choice of trading environment. *Default: custom Gymnasium environment.*
+- Whether to keep the 9 actions; integer vs. fractional shares; commission and execution-price rules. *Default: 9 actions, fractional shares, 0.1% fee, fill at the day's close.*
+- State features, discretization levels, and the size of the tabular state space. *Default: 135 states.*
+- Whether DQN uses the HW-2 PyTorch implementation or RLlib. *Default: HW-2-style PyTorch.*
+- Training budget, number of random seeds, and hyperparameter search ranges. *Default: 100k steps, 5 seeds, no search.*
+- Weighted-ensemble temperature τ and the vote tie-breaking rule. *Default: 0.05; top-weight member, then Hold, then lowest action.*
+- Team roles and the GitHub workflow. *Open.*
+- *(added during repo setup)* Paper template and slide software. *Default: LaTeX `article`; PowerPoint deck in `slides/`.*
+- *(added during repo setup)* Discount factor γ. *Default: 0.99.*
+- *(added during repo setup)* Repository visibility. *Open: the repository is public; the course asks for a private one.*
+- *(added during repo setup)* Confirm every equation marked **(reconstructed)** in this document. *Open.*
 
 ## 13. Notation Summary
 

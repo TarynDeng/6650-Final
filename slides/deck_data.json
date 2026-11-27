@@ -1,5 +1,5 @@
 {
- "commit": "b2e2863",
+ "commit": "f28b78d",
  "tickers": [
   "AAPL",
   "JPM",
@@ -13,6 +13,20 @@
   4
  ],
  "steps": 100000,
+ "n_stock_years": 9,
+ "n_tests": 101,
+ "config": {
+  "fee_pct": 0.1,
+  "cash": 10000.0,
+  "episode_len": 252,
+  "gamma": 0.99,
+  "temperature": 0.05,
+  "hidden": [
+   64,
+   64
+  ],
+  "n_states": 135
+ },
  "methods": [
   "Buy-and-hold",
   "Q-learning",
@@ -71,32 +85,11 @@
    0.0
   ]
  },
- "by_ticker": {
-  "AAPL": [
-   34.0,
-   31.1,
-   12.6,
-   13.2,
-   13.2,
-   26.8
-  ],
-  "JPM": [
-   36.3,
-   29.6,
-   14.2,
-   8.5,
-   12.9,
-   27.1
-  ],
-  "XOM": [
-   7.2,
-   -5.1,
-   -6.0,
-   0.4,
-   -2.0,
-   -2.7
-  ]
- },
+ "large_losses": 0,
+ "worst_loss": 14.1,
+ "falling_stock_years": [
+  "XOM 2023"
+ ],
  "trades": [
   1,
   86,
@@ -113,117 +106,124 @@
   382,
   287
  ],
- "hold_share": [
-  100,
-  14,
-  20,
-  11,
-  12,
-  30
+ "avg_position": [
+  100.0,
+  82.6,
+  40.0,
+  44.8,
+  51.8,
+  75.3
  ],
+ "picks": {
+  "Q-learning": 2,
+  "SARSA": 7,
+  "DQN": 6
+ },
+ "n_runs": 15,
+ "follows_top": 15,
+ "min_top_weight": 0.58,
+ "val_by_ticker": {
+  "AAPL": {
+   "Buy-and-hold": -28.3,
+   "Q-learning": -27.2,
+   "SARSA": -10.8,
+   "DQN": -14.5
+  },
+  "JPM": {
+   "Buy-and-hold": -14.5,
+   "Q-learning": -20.1,
+   "SARSA": -15.8,
+   "DQN": -14.7
+  },
+  "XOM": {
+   "Buy-and-hold": 80.3,
+   "Q-learning": 17.3,
+   "SARSA": 9.5,
+   "DQN": 26.9
+  }
+ },
+ "test_by_agent": {
+  "Q-learning": 18.5,
+  "SARSA": 6.9,
+  "DQN": 7.4
+ },
+ "tiebreak": {
+  "hold": 14.6,
+  "largest_action": 5.1,
+  "top_weight_then_hold": 17.1
+ },
  "paired": [
   {
    "a": "Q-learning",
    "b": "Buy-and-hold",
    "diff": -7.3,
    "wins": 1,
-   "n": 9,
-   "lo": -10.3,
-   "hi": -3.5
+   "n": 9
   },
   {
    "a": "SARSA",
    "b": "Buy-and-hold",
    "diff": -18.9,
    "wins": 0,
-   "n": 9,
-   "lo": -25.8,
-   "hi": -11.8
+   "n": 9
   },
   {
    "a": "DQN",
    "b": "Buy-and-hold",
    "diff": -18.5,
    "wins": 1,
-   "n": 9,
-   "lo": -25.5,
-   "hi": -11.2
+   "n": 9
   },
   {
    "a": "Weighted ens.",
    "b": "Buy-and-hold",
    "diff": -17.8,
    "wins": 0,
-   "n": 9,
-   "lo": -24.7,
-   "hi": -11.0
+   "n": 9
   },
   {
    "a": "Equal-weight ens.",
    "b": "Buy-and-hold",
    "diff": -8.8,
    "wins": 0,
-   "n": 9,
-   "lo": -11.4,
-   "hi": -6.1
+   "n": 9
   },
   {
    "a": "Q-learning",
    "b": "DQN",
    "diff": 11.2,
    "wins": 7,
-   "n": 9,
-   "lo": 2.5,
-   "hi": 19.2
+   "n": 9
   },
   {
    "a": "SARSA",
    "b": "DQN",
    "diff": -0.4,
    "wins": 3,
-   "n": 9,
-   "lo": -5.0,
-   "hi": 4.5
+   "n": 9
   },
   {
    "a": "Q-learning",
    "b": "SARSA",
    "diff": 11.6,
    "wins": 7,
-   "n": 9,
-   "lo": 4.7,
-   "hi": 18.4
+   "n": 9
   },
   {
    "a": "Weighted ens.",
    "b": "Equal-weight ens.",
    "diff": -9.0,
    "wins": 3,
-   "n": 9,
-   "lo": -15.4,
-   "hi": -2.9
+   "n": 9
   },
   {
    "a": "Equal-weight ens.",
    "b": "Q-learning",
    "diff": -1.5,
    "wins": 3,
-   "n": 9,
-   "lo": -4.3,
-   "hi": 1.6
+   "n": 9
   }
  ],
- "avg_weights": {
-  "qlearning": 0.17,
-  "sarsa": 0.4,
-  "dqn": 0.43
- },
- "val_return": {
-  "Buy-and-hold": 12.5,
-  "Q-learning": -10.0,
-  "SARSA": -5.7,
-  "DQN": -0.8
- },
  "curves": {
   "AAPL": {
    "steps": [
@@ -495,22 +495,5 @@
     26.9
    ]
   }
- },
- "stock_year_returns": {
-  "AAPL": [
-   54.8,
-   35.6,
-   12.0
-  ],
-  "JPM": [
-   29.6,
-   42.6,
-   37.1
-  ],
-  "XOM": [
-   -2.9,
-   8.7,
-   16.3
-  ]
  }
 }

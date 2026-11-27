@@ -20,7 +20,7 @@ data/
 
 **Why commit the files?** Yahoo Finance re-adjusts all past prices whenever a stock pays a new dividend. Downloading the same dates later would give slightly different prices, and therefore different results.
 
-**Checks.** `src/environment.py` refuses a file whose checksum does not match `SHA256SUMS`. It also rejects files with missing or non-positive prices, gaps longer than a week, or dates that do not cover the experiment.
+**Checks.** `src/data.py` refuses a file whose checksum does not match `SHA256SUMS`, and refuses to re-download a committed stock whose file is missing. A CSV that is not listed in `SHA256SUMS` is used with a warning. Files with missing or non-positive prices, duplicate or unordered dates, gaps longer than a week, or dates that do not cover the experiment are rejected.
 
 **Adding a stock.** Add the ticker to `DataConfig.tickers` in `src/config.py` and run phase 1; the file is downloaded on first use. Then commit it and refresh the checksums:
 
