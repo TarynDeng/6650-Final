@@ -113,7 +113,7 @@ Every number below is a default in [`src/config.py`](src/config.py), so it can b
 | Validation | 2022 (one year) |
 | Test | 2023, 2024 and 2025, each evaluated as a separate one-year window |
 
-The test years are never used for training, tuning, or ensemble weights. The price files are committed because Yahoo Finance re-adjusts historical prices whenever a stock pays a new dividend, so downloading the same dates later gives slightly different numbers. The code checks every file against `data/raw/SHA256SUMS` and rejects missing or non-positive prices, unordered dates, gaps longer than a week, and date ranges that do not cover the experiment.
+The test years are never used for training, tuning, or ensemble weights. The price files are committed because Yahoo Finance re-adjusts historical prices whenever a stock pays a new dividend, so downloading the same dates later gives slightly different numbers. The code checks every file against `data/raw/SHA256SUMS`, sorts the rows by date, and rejects missing or non-positive prices, duplicate dates, gaps longer than a week, and date ranges that do not cover the experiment.
 
 ### Trading environment ([`src/environment.py`](src/environment.py))
 

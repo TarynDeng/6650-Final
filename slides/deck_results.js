@@ -23,7 +23,7 @@ module.exports = function addResults(ctx) {
       [pp(qd.diff), `Q-learning vs. DQN: Q-learning won ${qd.wins} of ${qd.n}`],
       [pp(sd.diff), `SARSA vs. DQN: SARSA won ${sd.wins} of ${sd.n}`]]
       .forEach(([big, small], i) => stat(s, 8.55, 1.55 + i * 1.75, 4.15, 1.55, big, small));
-    s.addNotes(`Buy-and-hold made ${pct(val("Buy-and-hold"))} on average. Q-learning made ${pct(val("Q-learning"))}; it held stock ${pos("Q-learning")}% of the time on average, versus ${pos("DQN")}% for DQN and ${pos("SARSA")}% for SARSA. DQN made ${pct(val("DQN"))}, SARSA ${pct(val("SARSA"))}. Q-learning beat DQN in ${qd.wins} of ${qd.n} stock-years, but not everywhere, so treat this as an indication, not proof.`);
+    s.addNotes(`Buy-and-hold made ${pct(val("Buy-and-hold"))} on average. Q-learning made ${pct(val("Q-learning"))}; on average it kept ${pos("Q-learning")}% of its capital in stock, versus ${pos("DQN")}% for DQN and ${pos("SARSA")}% for SARSA. DQN made ${pct(val("DQN"))}, SARSA ${pct(val("SARSA"))}. Q-learning beat DQN in ${qd.wins} of ${qd.n} stock-years, but not everywhere, so treat this as an indication, not proof.`);
   }
 
   function rq2() {
@@ -75,7 +75,7 @@ module.exports = function addResults(ctx) {
   function rq4() {
     const s = slide("CONTENT");
     s.addText("RQ4: the weighted ensemble just copied the 2022 winner", { placeholder: "title" });
-    const meanVal = (a) => D.tickers.reduce((acc, t) => acc + D.val_by_ticker[t][a], 0) / D.tickers.length;
+    const meanVal = (a) => Math.round(10 * D.tickers.reduce((acc, t) => acc + D.val_by_ticker[t][a], 0) / D.tickers.length) / 10;
     s.addChart(pres.charts.BAR, [
       { name: `2022 validation (mean of ${D.tickers.length} stocks)`, labels: AGENTS, values: AGENTS.map(meanVal) },
       { name: "2023–2025 test", labels: AGENTS, values: AGENTS.map((a) => D.test_by_agent[a]) }], {
