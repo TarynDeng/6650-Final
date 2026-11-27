@@ -11,9 +11,9 @@ We train three RL algorithms (Q-learning, SARSA, DQN) to trade a single stock on
 | | |
 |---|---|
 | **Status** | The full pipeline works: data, environment, all three algorithms, both ensembles, evaluation, tables and figures. 39 tests run automatically on pushes to `main` and on every pull request. |
-| **Still to do** | Team review of the [placeholder decisions](#8-decisions-and-their-status), slides, paper |
+| **Still to do** | Team review of the [placeholder decisions](#8-decisions-and-their-status), finishing the slides, paper |
 | **Full proposal** | [`docs/proposal.md`](docs/proposal.md) (all equations and design rules) |
-| **Slide outline** | [`docs/presentation.md`](docs/presentation.md) |
+| **Slides (draft)** | [`slides/6650_final_presentation.pptx`](slides/6650_final_presentation.pptx), outline in [`docs/presentation.md`](docs/presentation.md) |
 | **Paper (LaTeX)** | [`paper/main.tex`](paper/main.tex) |
 
 ## Contents
@@ -245,6 +245,7 @@ Full run at commit `b2e2863` with the default settings (3 stocks × 5 seeds, 100
 ├── .github/workflows/tests.yml # runs the tests and a short smoke run on pushes to main and pull requests
 ├── data/raw/                   # daily prices for the default stocks + SHA256SUMS (in git)
 ├── results/                    # models, logs, tables, figures (not in git; see results/README.md)
+├── slides/                     # draft deck for December 2 (.pptx) and the script that builds it
 ├── docs/
 │   ├── proposal.md             # full project proposal with equations
 │   └── presentation.md         # slide-by-slide outline for December 2
@@ -362,13 +363,13 @@ The code needed a value for every open question, so each one has a **placeholder
 | Deliverable | Where | Due |
 |---|---|---|
 | Reproducible code | this repository | with the paper |
-| Presentation, 10-15 minutes | [`docs/presentation.md`](docs/presentation.md) (outline) | **December 2** |
+| Presentation, 10-15 minutes | [`slides/`](slides/) (draft deck), [`docs/presentation.md`](docs/presentation.md) (outline) | **December 2** |
 | Research paper, 4-6 pages | [`paper/`](paper/) | to be confirmed |
 
 | Date | Goal |
 |---|---|
 | Nov 26 | Full pipeline working (done) |
 | Nov 27-29 | Team reviews the defaults; final experiment run; experiments frozen on Nov 29 |
-| Nov 30 - Dec 1 | Slides and rehearsal |
+| Nov 30 - Dec 1 | Finish the slides (draft is in `slides/`), rehearse |
 | Dec 2 | Presentation |
 | After Dec 2 | Paper |

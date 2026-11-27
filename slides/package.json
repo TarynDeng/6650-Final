@@ -1,0 +1,11 @@
+{
+  "name": "6650-final-slides",
+  "private": true,
+  "description": "Builds the presentation deck from results (see README.md in this folder)",
+  "scripts": {
+    "build": "node build_deck.js"
+  },
+  "dependencies": {
+    "pptxgenjs": "4.0.1"
+  }
+}

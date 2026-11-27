@@ -2,7 +2,7 @@
 
 **Length:** 10–15 minutes. **Date:** 12/2.
 
-Skeleton only: fill in each slide as results come in. Timings are a suggestion for a ~13-minute talk with time for questions. Slide software is an open decision (e.g. Google Slides, PowerPoint, or LaTeX Beamer).
+**Draft deck:** [`slides/6650_final_presentation.pptx`](../slides/6650_final_presentation.pptx) (PowerPoint; see [`slides/README.md`](../slides/README.md)). It follows the outline below, with one extra backup slide. Timings are a suggestion for a ~13-minute talk with time for questions; fill in the Owner column to split the talk.
 
 | # | Slide | Content | Time | Owner |
 |---|-------|---------|------|-------|
