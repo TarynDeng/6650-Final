@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -46,11 +47,12 @@ import torch  # noqa: E402
 from src.config import ExperimentConfig  # noqa: E402
 from src.deep_rl import DQNAgent, Standardizer  # noqa: E402
 from src.ensemble import EnsemblePolicy, equal_weights, softmax_weights  # noqa: E402
-from src.environment import TradingEnv, load_ticker  # noqa: E402
+from src.environment import TradingEnv, load_ticker, read_checksums  # noqa: E402
 from src.evaluation import (buy_and_hold_policy, plot_action_frequencies,  # noqa: E402
                             plot_learning_curves, plot_learning_curves_by_ticker,
                             plot_loss_categories, plot_method_returns,
-                            plot_portfolio_values, result_row, run_policy, summarize)
+                            paired_comparison, plot_portfolio_values, result_row, run_policy,
+                            summarize)
 from src.tabular_rl import QLearningAgent, SarsaAgent, StateDiscretizer  # noqa: E402
 from src.training import train_agent  # noqa: E402
 
@@ -68,12 +70,35 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
+MANIFEST = "run_manifest.json"
+
+
 def git_commit() -> str:
+    """Short commit hash, with ``-dirty`` if there are uncommitted changes."""
     try:
-        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
+        return subprocess.check_output(["git", "describe", "--always", "--dirty"], cwd=ROOT,
                                        text=True).strip()
     except Exception:
         return "unknown"
+
+
+def package_versions() -> dict:
+    import platform
+
+    import gymnasium
+    import matplotlib
+    import numpy
+
+    return {"python": platform.python_version(), "numpy": numpy.__version__,
+            "pandas": pd.__version__, "gymnasium": gymnasium.__version__,
+            "torch": torch.__version__, "matplotlib": matplotlib.__version__}
+
+
+def read_manifest(out: Path) -> dict:
+    path = out / MANIFEST
+    if not path.exists():
+        sys.exit(f"{path} not found: run --phase 1 first.")
+    return json.loads(path.read_text())
 
 
 def make_agent(algo: str, splits: dict, cfg: ExperimentConfig, seed: int):
@@ -110,13 +135,14 @@ def run_phase1(args):
     seeds = args.seeds if args.seeds is not None else list(cfg.train.seeds)
     steps = args.steps or cfg.train.total_env_steps
     out = args.results_dir
+    # Phase 1 starts a new experiment: clear the previous one so that old
+    # models, logs and tables can never be mixed into this run's results.
     for sub in ("models", "logs", "tables", "figures"):
-        (out / sub).mkdir(parents=True, exist_ok=True)
+        if (out / sub).exists():
+            shutil.rmtree(out / sub)
+        (out / sub).mkdir(parents=True)
+    (out / MANIFEST).unlink(missing_ok=True)
     torch.set_num_threads(1)
-
-    run_config = {"config": dataclasses.asdict(cfg), "tickers": tickers, "seeds": seeds,
-                  "algos": args.algos, "total_env_steps": steps, "git_commit": git_commit()}
-    (out / "logs" / "phase1_config.json").write_text(json.dumps(run_config, indent=2, default=str))
 
     eval_rows, logs = [], []
     for ticker in tickers:
@@ -149,7 +175,7 @@ def run_phase1(args):
                 if seed == seeds[0]:
                     sample_traj[algo] = traj
                 test_mean = pd.DataFrame(rows).query("split == 'test'")["terminal_return"].mean()
-                print(f"  {run:<24} {time.time() - t0:6.1f}s  best val {log.attrs['best_val_return']:+.3f}"
+                print(f"  {run:<24} {time.time() - t0:6.1f}s  val {log.attrs['val_return']:+.3f}"
                       f"  mean test {test_mean:+.3f}")
 
         for split, window in sample_traj["buy_and_hold"]:
@@ -165,6 +191,16 @@ def run_phase1(args):
         plot_learning_curves(all_logs.query("ticker == @ticker"),
                              out / "figures" / f"phase1_learning_{ticker}.png",
                              title=f"{ticker}: validation return during training")
+    # Written last, so it only exists when phase 1 finished. Phases 2 and 3
+    # read it to use exactly the same tickers, seeds and runs.
+    checksums = read_checksums()
+    manifest = {"tickers": tickers, "seeds": seeds, "algos": args.algos,
+                "total_env_steps": steps, "git_commit": git_commit(),
+                "packages": package_versions(),
+                "data_sha256": {t: checksums.get(f"{t}.csv", "not recorded") for t in tickers},
+                "runs": [f"{a}_{t}_seed{s}" for t in tickers for s in seeds for a in args.algos],
+                "config": dataclasses.asdict(cfg)}
+    (out / MANIFEST).write_text(json.dumps(manifest, indent=2, default=str))
     print("\nTest windows, terminal return by method:")
     print(summarize(results.query("split == 'test'"), by=("method",)).round(3).to_string())
 
@@ -172,10 +208,21 @@ def run_phase1(args):
 METHOD_ORDER = ["buy_and_hold", "qlearning", "sarsa", "dqn", "weighted_ens", "equal_ens"]
 
 
-def _settings(args, cfg):
-    tickers = args.tickers or list(cfg.data.tickers)
-    seeds = args.seeds if args.seeds is not None else list(cfg.train.seeds)
-    return tickers, seeds
+COMPARISONS = [("qlearning", "buy_and_hold"), ("sarsa", "buy_and_hold"), ("dqn", "buy_and_hold"),
+               ("weighted_ens", "buy_and_hold"), ("equal_ens", "buy_and_hold"),
+               ("qlearning", "dqn"), ("sarsa", "dqn"), ("qlearning", "sarsa"),
+               ("weighted_ens", "equal_ens"), ("equal_ens", "qlearning")]
+
+
+def _settings(args, out: Path):
+    """Tickers and seeds of the phase 1 run in ``out`` (phases 2 and 3 must match)."""
+    m = read_manifest(out)
+    if set(m["algos"]) != set(ALGORITHMS):
+        sys.exit(f"Phase 1 trained only {m['algos']}; the ensembles need all of {ALGORITHMS}.")
+    for name, given in (("tickers", args.tickers), ("seeds", args.seeds)):
+        if given is not None and list(given) != list(m[name]):
+            sys.exit(f"--{name} {given} differs from phase 1 ({m[name]}). Omit it, or re-run phase 1.")
+    return m["tickers"], m["seeds"], m
 
 
 def load_members(ticker: str, seed: int, splits: dict, cfg: ExperimentConfig, models_dir: Path):
@@ -196,8 +243,8 @@ def run_phase2(args):
     terminal return on the validation year (2022) only.
     """
     cfg = ExperimentConfig()
-    tickers, seeds = _settings(args, cfg)
     out = args.results_dir
+    tickers, seeds, _ = _settings(args, out)
     torch.set_num_threads(1)
     val1 = pd.read_csv(out / "tables" / "phase1_val.csv")
     eval_rows, weight_rows = [], []
@@ -233,12 +280,19 @@ def run_phase2(args):
 def run_phase3(args):
     """Final out-of-sample comparison of all six methods: tables and figures."""
     cfg = ExperimentConfig()
-    tickers, seeds = _settings(args, cfg)
     out = args.results_dir
+    tickers, seeds, manifest = _settings(args, out)
     torch.set_num_threads(1)
+    if not (out / "tables" / "phase2_test.csv").exists():
+        sys.exit("Phase 2 results not found: run --phase 2 first.")
     test = pd.concat([pd.read_csv(out / "tables" / f"phase{p}_test.csv") for p in (1, 2)],
                      ignore_index=True)
-    test = test[test["ticker"].isin(tickers)]
+    expected = {(t, s) for t in tickers for s in seeds}
+    for method, d in test.query("seed >= 0").groupby("method"):
+        got = set(zip(d["ticker"], d["seed"]))
+        if got != expected:
+            sys.exit(f"{method}: results cover {sorted(got)}, expected {sorted(expected)}. "
+                     "Re-run phases 1-3 together.")
     test.to_csv(out / "tables" / "phase3_test.csv", index=False)
 
     order = [m for m in METHOD_ORDER if m in set(test["method"])]
@@ -251,6 +305,8 @@ def run_phase3(args):
     per_seed = (test.query("seed >= 0").groupby(["method", "ticker", "seed"])["terminal_return"]
                 .mean().groupby(["method", "ticker"]).agg(["mean", "std", "min", "max"]))
     per_seed.to_csv(out / "tables" / "phase3_seed_stability.csv")
+    paired = pd.DataFrame([paired_comparison(test, a, b) for a, b in COMPARISONS])
+    paired.to_csv(out / "tables" / "phase3_paired_comparisons.csv", index=False)
     behavior = test.groupby("method")[[f"freq_a{a}" for a in range(9)] + ["n_trades", "total_fees"]].mean()
     behavior.reindex(order).to_csv(out / "tables" / "phase3_trading_behavior.csv")
 
@@ -258,7 +314,7 @@ def run_phase3(args):
     plot_method_returns(test, order, figs / "phase3_terminal_return.png")
     plot_loss_categories(test, order, figs / "phase3_loss_categories.png")
     plot_action_frequencies(behavior.reindex(order), figs / "phase3_action_frequencies.png")
-    logs = pd.concat([pd.read_csv(p) for p in sorted((out / "logs").glob("*_seed*.csv"))],
+    logs = pd.concat([pd.read_csv(out / "logs" / f"{run}.csv") for run in manifest["runs"]],
                      ignore_index=True)
     val1 = pd.read_csv(out / "tables" / "phase1_val.csv")
     bh_val = val1.query("method == 'buy_and_hold'").set_index("ticker")["terminal_return"].to_dict()
@@ -283,8 +339,10 @@ def run_phase3(args):
             plot_portfolio_values(traj, figs / f"phase3_values_{ticker}_{start[:4]}.png",
                                   title=f"{ticker} test {start[:4]} (seed {seed})")
 
-    print("Test windows, all methods (3 windows x tickers x seeds):")
+    print("Test windows, all methods (seeds averaged within each ticker and year):")
     print(by_method.round(3).to_string())
+    print("\nPaired comparisons over market windows (a - b, 95% bootstrap CI):")
+    print(paired.round(3).to_string(index=False))
     print("\nSeed stability (mean test return per seed, spread across seeds):")
     print(per_seed.round(3).to_string())
 

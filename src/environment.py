@@ -66,16 +66,65 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = REPO_ROOT / "data" / "raw"
 
 
+CHECKSUM_FILE = RAW_DIR / "SHA256SUMS"
+# Trades worth less than this (in dollars) are skipped, so float round-off
+# leftovers never count as trades.
+MIN_TRADE_VALUE = 0.01
+
+
+def file_sha256(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def read_checksums(path: Path = CHECKSUM_FILE) -> dict[str, str]:
+    """``{filename: sha256}`` from a ``sha256sum``-style file (empty if missing)."""
+    if not Path(path).exists():
+        return {}
+    pairs = (line.split() for line in Path(path).read_text().splitlines() if line.strip())
+    return {name: digest for digest, name in pairs}
+
+
+def validate_prices(df: pd.DataFrame, ticker: str, start: str, end: str) -> None:
+    """Fail loudly on data problems instead of training on bad prices."""
+    problems = []
+    if not df.index.is_monotonic_increasing or df.index.has_duplicates:
+        problems.append("dates are not strictly increasing")
+    close = df["Close"]
+    if close.isna().any() or (close <= 0).any():
+        problems.append("missing or non-positive closing prices")
+    gaps = df.index.to_series().diff().dt.days.dropna()
+    if (gaps > 7).any():
+        problems.append(f"gap of {int(gaps.max())} calendar days between trading days")
+    # The data must cover the requested range (allowing for weekends/holidays).
+    if df.index.min() > pd.Timestamp(start) + pd.Timedelta(days=7) or \
+            df.index.max() < pd.Timestamp(end) - pd.Timedelta(days=7):
+        problems.append(f"covers {df.index.min().date()}..{df.index.max().date()}, "
+                        f"not {start}..{end}")
+    if problems:
+        raise ValueError(f"{ticker} price data failed checks: " + "; ".join(problems)
+                         + f". Delete data/raw/{ticker}.csv to re-download.")
+
+
 def load_price_data(ticker: str, start: str, end: str, cache_dir: Path = RAW_DIR,
-                    adjusted: bool = True) -> pd.DataFrame:
+                    adjusted: bool = True, verify_checksum: bool = True) -> pd.DataFrame:
     """Load daily OHLCV bars for one ticker, using a CSV cache.
 
     The first call downloads from yfinance and writes ``{cache_dir}/{ticker}.csv``;
-    later calls read the cached file, so runs are reproducible offline.
+    later calls read the cached file. The CSVs for the default tickers are
+    committed to git together with ``data/raw/SHA256SUMS``, because yfinance
+    re-scales adjusted prices whenever a new dividend is paid: a fresh
+    download would not reproduce our numbers. A cached file whose checksum
+    does not match the recorded one is rejected.
     """
     cache_dir = Path(cache_dir)
     path = cache_dir / f"{ticker}.csv"
     if path.exists():
+        expected = read_checksums(cache_dir / "SHA256SUMS").get(path.name)
+        if verify_checksum and expected and file_sha256(path) != expected:
+            raise ValueError(f"{path} does not match its recorded checksum in SHA256SUMS. "
+                             f"Restore the committed file with `git checkout -- data/raw/{path.name}`.")
         df = pd.read_csv(path, index_col="Date", parse_dates=True)
     else:
         import yfinance as yf
@@ -88,8 +137,12 @@ def load_price_data(ticker: str, start: str, end: str, cache_dir: Path = RAW_DIR
         df = df[["Open", "High", "Low", "Close", "Volume"]]
         cache_dir.mkdir(parents=True, exist_ok=True)
         df.to_csv(path)
+        print(f"Downloaded {ticker} to {path}. Commit it and add its checksum to "
+              f"data/raw/SHA256SUMS so teammates use the same prices.")
     df = df.sort_index()
-    return df.loc[(df.index >= pd.Timestamp(start)) & (df.index < pd.Timestamp(end))]
+    df = df.loc[(df.index >= pd.Timestamp(start)) & (df.index < pd.Timestamp(end))]
+    validate_prices(df, ticker, start, end)
+    return df
 
 
 def compute_market_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -194,20 +247,24 @@ class TradingEnv(gym.Env):
         """Fill the order at ``price``. Returns (fee paid, signed shares traded)."""
         side, frac = ACTIONS[int(action)]
         fee_rate = self.cfg.fee_rate
-        if side == "buy" and self.cash > 0:
+        if side == "buy":
             # Spend frac * cash in total, fee included.
             shares = frac * self.cash / (price * (1.0 + fee_rate))
             if not self.cfg.fractional_shares:
                 shares = float(np.floor(shares))
+            if shares * price < MIN_TRADE_VALUE:
+                return 0.0, 0.0
             cost = shares * price
             fee = cost * fee_rate
             self.cash = max(self.cash - cost - fee, 0.0)  # clamp float round-off
             self.shares += shares
             return fee, shares
-        if side == "sell" and self.shares > 0:
+        if side == "sell":
             shares = self.shares if frac >= 1.0 else frac * self.shares
             if not self.cfg.fractional_shares and frac < 1.0:
                 shares = float(np.floor(shares))
+            if shares * price < MIN_TRADE_VALUE:
+                return 0.0, 0.0
             proceeds = shares * price
             fee = proceeds * fee_rate
             self.cash += proceeds - fee

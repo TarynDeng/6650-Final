@@ -1,29 +1,22 @@
 # Results
 
-Experiment outputs are **not committed** to git (see `.gitignore`). Only this file is tracked. Final figures for the paper are copied into `paper/figures/`, which is tracked.
-
-## Layout
+Experiment outputs are **not committed** to git (see `.gitignore`); re-create them with the commands in the main README. Final figures for the paper are copied into `paper/figures/`, which is tracked.
 
 ```
 results/
-├── README.md        # this file (tracked)
-├── models/          # trained Q-tables and DQN weights
-├── logs/            # per-run learning curves (return vs. environment steps)
-├── tables/          # aggregated metrics (terminal return, loss categories, stability)
-└── figures/         # plots for the paper and slides
+├── run_manifest.json   # stocks, seeds, settings, git commit, package versions, data checksums
+├── models/             # trained Q-tables (.pkl) and DQN weights (.pt)
+├── logs/               # one learning curve per run
+├── tables/             # per-episode results and summaries
+└── figures/            # plots for the paper and slides
 ```
+
+Phase 1 deletes the previous contents of `results/` before it starts, so results from different runs are never mixed. To keep an older run, use `--results-dir` with another folder.
 
 ## Naming
 
-Each training run is identified by algorithm, ticker, and seed:
+Each training run is `{algo}_{TICKER}_seed{n}`, for example `dqn_AAPL_seed0`. The ensembles use the method names `weighted_ens` and `equal_ens`; buy-and-hold is `buy_and_hold` with seed `-1`.
 
-```
-{algo}_{TICKER}_seed{n}        e.g. dqn_XXX_seed0
-```
-
-- `models/{run}.pkl` (tabular Q-table) or `models/{run}.pt` (DQN weights)
-- `logs/{run}.csv` with at least: `env_step, episode, train_return, eval_return, wall_time`
-- `tables/{phase}_{split}.csv`, e.g. `phase3_test.csv`, one row per (method, ticker, test window, seed)
-- Ensembles use `weighted_ens` and `equal_ens` as the algorithm name.
-
-Every run should also save its config (hyperparameters, seed, data split, git commit hash) so results can be traced back to code.
+- `logs/{run}.csv`: `env_step, episode, train_return, eval_return, epsilon, wall_time` (`eval_return` is the 2022 validation return, recorded every 5,000 steps).
+- `tables/phase{1,2}_{val,test}.csv`: one row per method, ticker, seed and year, with terminal return, loss category, trade count, fees and action frequencies.
+- `tables/phase3_*.csv`: final summaries; see "Output files" in the main README.

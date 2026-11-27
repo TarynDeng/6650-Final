@@ -31,13 +31,35 @@ def test_agent_trains_and_acts(name, tmp_path):
     res = run_policy(TradingEnv(df), lambda o: agent.act(o, explore=False))
     assert len(res["actions"]) == len(df) - 1
     assert all(0 <= a < N_ACTIONS for a in res["actions"])
-    # Save / load round trip gives the same greedy actions.
+    # Save / load must restore everything, including the discretizer bins or
+    # standardizer statistics: load into an agent fit on *different* data.
     path = tmp_path / f"{name}.bin"
     agent.save(path)
-    other = make_agent(name, df, seed=1)
+    other = make_agent(name, make_features(n=200, seed=7) * 3.0, seed=1)
     other.load(path)
-    obs = TradingEnv(df).reset(seed=0)[0]
-    assert other.act(obs, explore=False) == agent.act(obs, explore=False)
+    env = TradingEnv(df)
+    obs, _ = env.reset(seed=0)
+    for _ in range(50):
+        a = agent.act(obs, explore=False)
+        assert other.act(obs, explore=False) == a
+        obs, *_ = env.step(a)
+
+
+@pytest.mark.parametrize("name", ["qlearning", "sarsa", "dqn"])
+def test_training_is_deterministic(name):
+    df = make_features(n=200)
+
+    def train_once():
+        agent = make_agent(name, df, seed=3)
+        log = train_agent(agent, TradingEnv(df, EnvConfig(), episode_len=60), total_steps=500,
+                          eps_start=1.0, eps_end=0.05, eps_decay_frac=0.5, seed=3,
+                          val_env=TradingEnv(df), eval_every=250)
+        res = run_policy(TradingEnv(df), lambda o: agent.act(o, explore=False))
+        return log.drop(columns="wall_time"), res["values"]
+
+    (log1, v1), (log2, v2) = train_once(), train_once()
+    assert log1.equals(log2)
+    assert np.array_equal(v1, v2)
 
 
 def test_discretizer_state_count_and_range():

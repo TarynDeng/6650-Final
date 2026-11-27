@@ -115,9 +115,15 @@ class _TabularAgent:
                          "gamma": self.gamma}, f)
 
     def load(self, path) -> None:
+        """Restore the Q-table and the discretizer exactly as saved."""
         with open(path, "rb") as f:
             d = pickle.load(f)
-        self.q, self.disc.edges = d["q"], d["edges"]
+        self.disc.n_bins = tuple(d["n_bins"])
+        self.disc.n_position_levels = d["n_position_levels"]
+        self.disc.edges = d["edges"]
+        if d["q"].shape != (self.disc.n_states, N_ACTIONS):
+            raise ValueError(f"Saved Q-table shape {d['q'].shape} does not match its discretizer")
+        self.q = d["q"]
 
 
 class QLearningAgent(_TabularAgent):

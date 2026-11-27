@@ -105,15 +105,57 @@ def result_row(result: dict, **labels) -> dict:
     return row
 
 
+def window_means(results: pd.DataFrame) -> pd.DataFrame:
+    """Average over seeds: one terminal return per (method, ticker, test window).
+
+    Seeds only measure training randomness; each (ticker, window) is one
+    independent market sample. Summaries and comparisons are built on these.
+    """
+    return (results.groupby(["method", "ticker", "window"])["terminal_return"].mean()
+            .reset_index())
+
+
 def summarize(results: pd.DataFrame, by=("method",)) -> pd.DataFrame:
-    """Mean / median / std of terminal return and loss-category counts."""
-    g = results.groupby(list(by))
-    out = g["terminal_return"].agg(["mean", "median", "std", "count"])
-    cats = results.pivot_table(index=list(by), columns="loss_category", values="terminal_return",
-                               aggfunc="count", fill_value=0)
-    cats = cats.reindex(columns=[1, 2, 3, 4], fill_value=0)
-    cats.columns = [f"cat{c}" for c in cats.columns]
-    return out.join(cats)
+    """Summary of terminal returns, with market windows as the unit.
+
+    Columns:
+        mean, median, std_windows: over (ticker, window) samples, after
+            averaging seeds; n_windows: number of those samples.
+        seed_std: std across seeds within a window, averaged over windows
+            (training randomness; NaN for methods with one run per window).
+        n_episodes: all evaluated episodes (windows x seeds).
+        share_cat1..4: share of episodes in each terminal-loss category.
+    """
+    by = list(by)
+    keys = list(dict.fromkeys(by + ["method", "ticker", "window"]))
+    win = results.groupby(keys)["terminal_return"].mean().reset_index()
+    out = win.groupby(by)["terminal_return"].agg(mean="mean", median="median",
+                                                 std_windows="std", n_windows="count")
+    out["seed_std"] = results.groupby(keys)["terminal_return"].std().groupby(by).mean()
+    out["n_episodes"] = results.groupby(by).size()
+    cats = (results.pivot_table(index=by, columns="loss_category", values="terminal_return",
+                                aggfunc="count", fill_value=0)
+            .reindex(columns=[1, 2, 3, 4], fill_value=0))
+    shares = cats.div(cats.sum(axis=1), axis=0)
+    shares.columns = [f"share_cat{c}" for c in shares.columns]
+    return out.join(shares)
+
+
+def paired_comparison(results: pd.DataFrame, a: str, b: str, n_boot: int = 10_000,
+                      seed: int = 0) -> dict:
+    """Compare methods ``a`` and ``b`` window by window (seeds averaged first).
+
+    Returns the mean difference (a - b) in terminal return, a 95% bootstrap
+    confidence interval over market windows, and how many windows a wins.
+    """
+    w = window_means(results).pivot_table(index=["ticker", "window"], columns="method",
+                                          values="terminal_return")
+    d = (w[a] - w[b]).dropna().to_numpy()
+    rng = np.random.default_rng(seed)
+    boot = d[rng.integers(0, len(d), (n_boot, len(d)))].mean(1)
+    lo, hi = np.percentile(boot, [2.5, 97.5])
+    return {"method_a": a, "method_b": b, "mean_diff": d.mean(), "ci_low": lo, "ci_high": hi,
+            "a_wins": int((d > 0).sum()), "n_windows": len(d)}
 
 
 def plot_learning_curves(logs: pd.DataFrame, out_path, title: str = "") -> None:
@@ -198,7 +240,7 @@ def plot_loss_categories(results: pd.DataFrame, order, out_path) -> None:
     counts = (results.pivot_table(index="method", columns="loss_category", values="terminal_return",
                                   aggfunc="count", fill_value=0)
               .reindex(index=order, columns=[1, 2, 3, 4], fill_value=0))
-    share = counts.div(counts.sum(1), axis=0)
+    share = counts.div(counts.sum(axis=1), axis=0)
     fig, ax = plt.subplots(figsize=(7, 4))
     bottom = np.zeros(len(share))
     colors = ["#2ca02c", "#ffdd57", "#ff7f0e", "#d62728"]

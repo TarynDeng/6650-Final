@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies (CPU-only PyTorch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Run tests
+        run: python -m pytest -q tests
+      - name: Smoke-run all three phases (one stock, one seed, short budget)
+        run: |
+          python experiments/run_experiments.py --phase 1 --tickers AAPL --seeds 0 --steps 3000 --results-dir /tmp/smoke
+          python experiments/run_experiments.py --phase 2 --results-dir /tmp/smoke
+          python experiments/run_experiments.py --phase 3 --results-dir /tmp/smoke

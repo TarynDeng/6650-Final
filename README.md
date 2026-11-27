@@ -2,174 +2,341 @@
 
 **Comparative Study of Shallow and Deep Reinforcement Learning Algorithms in Stock Trading with Performance-Based Weighted Ensemble**
 
-DSAN 6650 (Reinforcement Learning), Final Project. Presentation due **12/2**.
+DSAN 6650 (Reinforcement Learning), Final Project. Presentation on **December 2**.
 
-> **Status:** the full pipeline works end to end: data loading, the trading environment, Q-learning, SARSA, DQN, the weighted and equal-weight ensembles, buy-and-hold, evaluation tables and figures. All three phases run with one command each. Every setting the team has not decided yet has a default in [`src/config.py`](src/config.py); see [Open Decisions](#open-decisions). The full proposal, including all equations, is in [`docs/proposal.md`](docs/proposal.md).
+[![tests](https://github.com/TarynDeng/6650-Final/actions/workflows/tests.yml/badge.svg)](https://github.com/TarynDeng/6650-Final/actions/workflows/tests.yml)
 
-## Overview
+We train three RL algorithms (Q-learning, SARSA, DQN) to trade a single stock on historical daily data. Each algorithm decides when to buy, when to sell, how much, and when to hold. We then compare the trained algorithms, two ensembles of them, and buy-and-hold on years the agents never saw. Everything is a simulation with historical prices and simulated cash; there is no real trading.
 
-We use a historical stock-trading simulation as a common environment to compare **shallow (tabular) RL** and **deep RL** algorithms. The focus is the RL algorithms, not a sophisticated trading agent. Each algorithm learns on its own **when to buy, when to sell, how much to trade, and when to hold**. After training, we compare the algorithms on held-out historical data, and test whether a **validation-weighted vote over the trained policies** beats the individual algorithms.
+| | |
+|---|---|
+| **Status** | The full pipeline works: data, environment, all three algorithms, both ensembles, evaluation, tables and figures. 30 tests run automatically on every push and pull request. |
+| **Still to do** | Team review of the [placeholder decisions](#8-decisions-and-their-status), slides, paper |
+| **Full proposal** | [`docs/proposal.md`](docs/proposal.md) (all equations and design rules) |
+| **Slide outline** | [`docs/presentation.md`](docs/presentation.md) |
+| **Paper (LaTeX)** | [`paper/main.tex`](paper/main.tex) |
 
-All experiments use historical data and simulated capital. No real trading is involved.
+## Contents
 
-## Research Questions
+1. [Quick start](#1-quick-start)
+2. [Research questions](#2-research-questions)
+3. [How the experiment works](#3-how-the-experiment-works)
+4. [Latest results](#4-latest-results)
+5. [Repository layout](#5-repository-layout)
+6. [Running variants](#6-running-variants)
+7. [Output files](#7-output-files)
+8. [Decisions and their status](#8-decisions-and-their-status)
+9. [Known limitations](#9-known-limitations)
+10. [How to contribute](#10-how-to-contribute)
+11. [Deliverables and timeline](#11-deliverables-and-timeline)
 
-- **RQ1, Algorithm Performance:** How does shallow RL differ from deep RL in trading performance in the same market environment?
-- **RQ2, Terminal Loss Distribution:** How do the algorithms differ in the frequency and severity of terminal investment losses?
-- **RQ3, Learning Efficiency and Stability:** How do they differ in learning efficiency, training stability, and results across random seeds?
-- **RQ4, Weighted Ensemble:** Does a weighted combination built from validation performance improve return, terminal-loss outcomes, and stability?
+---
 
-## Methods at a Glance
+## 1. Quick start
 
-| Category | Algorithm | Notes |
-|----------|-----------|-------|
-| Shallow RL | Q-learning | Tabular, off-policy |
-| Shallow RL | SARSA | Tabular, on-policy |
-| Deep RL | DQN | Neural network, off-policy; experience replay + target network |
-| Ensemble | Performance-based weighted vote | Softmax weights from validation terminal return |
-| Ensemble baseline | Equal-weight vote | Control for the weighted ensemble |
-| Benchmark | Buy-and-hold | Non-RL baseline |
+Requires Python 3.10 or newer (tested with 3.12). Everything runs on a laptop CPU; no GPU is needed.
 
-**Environment.** One stock per episode, daily bars, no leverage, no short selling, transaction costs included. We prefer an existing Gymnasium-compatible trading environment (e.g., Gym Trading Env) plus a thin action adapter if needed.
-
-**State.** Market features (e.g., 5-day return, 20-day return, 20-day volatility) and portfolio features (cash fraction, position fraction). Discretized for the tabular methods, continuous for DQN. Discretization and normalization are fit on the training set only.
-
-**Actions (tentative): 9-level discrete trade sizing.**
-
-| Action | Operation | Action | Operation |
-|:-:|---|:-:|---|
-| 0 | Hold | | |
-| 1 | Buy with 25% of available cash | 5 | Sell 25% of holdings |
-| 2 | Buy with 50% of available cash | 6 | Sell 50% of holdings |
-| 3 | Buy with 75% of available cash | 7 | Sell 75% of holdings |
-| 4 | Buy with 100% of available cash | 8 | Sell 100% of holdings |
-
-**Reward.** Per-step log return of portfolio value, $r_t = \ln(V_t / V_{t-1})$, with fees reflected in $V_t$. No drawdown penalty, risk-aversion term, or stop-loss rule.
-
-## Data Split (tentative)
-
-| Split | Period | Purpose |
-|-------|--------|---------|
-| Training | 2015–2021 | Train the RL algorithms |
-| Validation | 2022 | Limited hyperparameter selection; ensemble weights |
-| Testing | 2023–2025 | Out-of-sample comparison, as three 12-month windows |
-
-About 3 stocks and about 5 training seeds per algorithm (both tentative). The test set is never used for training, tuning, or ensemble weights.
-
-## Evaluation
-
-- **Terminal return** $R_T = (V_T - V_0)/V_0$: mean, median, per window.
-- **Terminal loss** categories at the end of each test window: (1) profit or break-even, (2) loss in (0%, 20%], (3) loss in (20%, 40%], (4) loss > 40%. **This is not maximum drawdown.**
-- **Learning efficiency:** return vs. environment steps.
-- **Stability:** mean and standard deviation across seeds, stocks, and test years.
-- **Trading behavior:** buy/sell/hold frequencies, action-size distribution, trade count and fees, portfolio-value curves.
-
-## Repository Layout
-
-```
-6650-Final/
-├── data/
-│   └── README.md               # data layout and sources (data files are git-ignored)
-├── docs/
-│   ├── proposal.md             # full project proposal
-│   └── presentation.md         # slide-by-slide outline for 12/2
-├── experiments/
-│   └── run_experiments.py      # entry point for training / evaluation runs
-├── paper/
-│   ├── main.tex                # research paper skeleton (LaTeX, 4–6 pages)
-│   ├── references.bib
-│   └── figures/                # final figures used in the paper
-├── results/
-│   └── README.md               # output layout and naming (outputs are git-ignored)
-├── src/
-│   ├── __init__.py
-│   ├── config.py               # all default settings (team to confirm)
-│   ├── environment.py          # data loading, features, trading env
-│   ├── tabular_rl.py           # state discretization, Q-learning, SARSA
-│   ├── deep_rl.py              # DQN (replay buffer, target network)
-│   ├── ensemble.py             # softmax weights, weighted / equal-weight voting
-│   ├── evaluation.py           # terminal return / loss, rollouts, buy-and-hold, plots
-│   └── training.py             # one training loop shared by all algorithms
-├── tests/                      # accounting and agent tests (pytest)
-├── requirements.txt
-└── README.md
-```
-
-## Getting Started
+**1. Install**
 
 ```bash
+git clone https://github.com/TarynDeng/6650-Final.git
+cd 6650-Final
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Run the tests, then Phase 1. The first run downloads daily prices from yfinance into `data/raw/` (git-ignored); later runs read the cached CSVs.
+**2. Check that everything works** (a few seconds)
 
 ```bash
 python -m pytest -q tests
-python experiments/run_experiments.py --phase 1 --tickers AAPL --seeds 0   # one stock, one seed (~1 min)
+```
 
-# Full experiment, all tickers and seeds in src/config.py (~20 min on a laptop CPU)
+**3. Run one stock with one seed** (about 1 minute)
+
+```bash
+python experiments/run_experiments.py --phase 1 --tickers AAPL --seeds 0
+```
+
+The price data for the three default stocks is already in the repository (`data/raw/`), so no download is needed and everyone gets exactly the same numbers. A stock that is not there yet is downloaded from Yahoo Finance on first use.
+
+**4. Run the full experiment** (about 15 minutes: 3 stocks × 5 seeds × 3 algorithms)
+
+```bash
 python experiments/run_experiments.py --phase 1   # train Q-learning, SARSA, DQN; evaluate them and buy-and-hold
-python experiments/run_experiments.py --phase 2   # weighted and equal-weight ensembles (weights from 2022 only)
+python experiments/run_experiments.py --phase 2   # build and evaluate the two ensembles
 python experiments/run_experiments.py --phase 3   # final tables and figures for all six methods
 ```
 
-Phases 2 and 3 read the Phase 1 models and tables, so pass the same `--tickers` / `--seeds` to every phase.
+The results land in `results/`. Start with `results/tables/phase3_summary_by_method.csv` and the `results/figures/phase3_*.png` plots (see [Output files](#7-output-files)).
 
-Outputs go to `results/` (see [`results/README.md`](results/README.md)):
-- `tables/phase{1,2}_{val,test}.csv`: one row per method, ticker, seed, and window; `phase2_weights.csv`: ensemble weights;
-- `tables/phase3_*.csv`: final summaries by method, ticker, test year, seed stability, and trading behavior;
-- `logs/{algo}_{TICKER}_seed{n}.csv`: learning curves;
-- `models/`: trained Q-tables and DQN weights;
-- `figures/phase3_*.png`: terminal return, loss categories, action frequencies, learning curves, and portfolio-value curves.
+---
 
-Build the paper (needs a TeX distribution with `latexmk`):
+## 2. Research questions
+
+| RQ | Question | Where the answer comes from |
+|----|----------|-----------------------------|
+| **RQ1** Performance | How does shallow (tabular) RL compare with deep RL in trading performance? | `phase3_summary_by_method.csv`, `phase3_terminal_return.png` |
+| **RQ2** Terminal losses | How often, and how badly, does each method end a test year with a loss? | Loss categories in the summary tables, `phase3_loss_categories.png` |
+| **RQ3** Learning and stability | How fast do they learn, and how much do results vary across random seeds? | `phase3_learning_curves.png`, `phase3_seed_stability.csv` |
+| **RQ4** Ensemble | Does a vote weighted by validation performance beat the single algorithms and an equal-weight vote? | `weighted_ens` vs. `equal_ens` rows in the summary tables |
+
+---
+
+## 3. How the experiment works
+
+```mermaid
+flowchart LR
+    A[Yahoo Finance<br/>daily prices] --> B[Features<br/>ret5, ret20, vol20]
+    B --> C{Split by date}
+    C -->|2015-2021| D[Train<br/>Q-learning, SARSA, DQN]
+    C -->|2022| E[Validation<br/>ensemble weights]
+    C -->|2023, 2024, 2025| F[Test<br/>3 one-year windows]
+    D --> E
+    D --> G[Weighted and<br/>equal-weight ensembles]
+    E --> G
+    D --> F
+    G --> F
+    F --> H[Tables and figures]
+```
+
+Each step is described below. Every number here is a default in [`src/config.py`](src/config.py), so it can be changed in one place.
+
+### Data
+
+| Item | Setting |
+|---|---|
+| Source | Yahoo Finance via `yfinance`, split- and dividend-adjusted daily prices, downloaded on 2026-11-26 and committed in `data/raw/` with SHA-256 checksums |
+| Stocks | AAPL (technology), JPM (banking), XOM (energy) |
+| Training | 2015-01-01 to 2021-12-31 (about 1,760 trading days per stock) |
+| Validation | 2022 (one year) |
+| Test | 2023, 2024 and 2025, each evaluated as a separate one-year window |
+
+The test years are never used for training, tuning, or ensemble weights.
+
+Why the price files are committed: Yahoo Finance re-adjusts historical prices every time a stock pays a new dividend, so downloading the same dates later gives slightly different numbers. The code checks every file against `data/raw/SHA256SUMS` and also rejects data with missing or non-positive prices, gaps longer than a week, or dates that do not cover the experiment.
+
+### Trading environment ([`src/environment.py`](src/environment.py))
+
+One episode trades one stock, starting with $10,000 in cash.
+
+- **Observation:** 5-day log return, 20-day log return, 20-day volatility, and the share of the portfolio currently held in stock. All of these use prices up to and including today only.
+- **Timing:** the agent sees today's data, its order fills at today's closing price, and the portfolio is valued at tomorrow's close. No information from the future is used.
+- **Rules:** no borrowing (leverage), no short selling, 0.1% fee on every trade, fractional shares allowed. Trades worth less than one cent are skipped.
+- **Actions:** 9 choices that set both the direction and the size of a trade.
+
+| Action | Meaning | Action | Meaning |
+|:-:|---|:-:|---|
+| 0 | Hold (do nothing) | | |
+| 1 | Buy with 25% of available cash | 5 | Sell 25% of shares held |
+| 2 | Buy with 50% of available cash | 6 | Sell 50% of shares held |
+| 3 | Buy with 75% of available cash | 7 | Sell 75% of shares held |
+| 4 | Buy with 100% of available cash | 8 | Sell 100% of shares held |
+
+- **Reward:** the daily log return of the portfolio value, fees included:
+
+  $$r_t = \ln\frac{V_{t+1}}{V_t}$$
+
+  where $V_t$ is cash plus the market value of the shares. Over an episode the rewards add up to $\ln(V_T/V_0)$, so maximizing total reward means maximizing final wealth. There is no extra risk penalty.
+
+The tests in [`tests/test_environment.py`](tests/test_environment.py) check the accounting: fees, buy-sell round trips, partial orders, and that the rewards add up exactly.
+
+### Agents
+
+| Algorithm | Type | What it sees | Key settings | Code |
+|---|---|---|---|---|
+| Q-learning | Tabular, off-policy | 135 discrete states: each market feature cut into 3 bins (learned from training data) × 5 position levels | step size 0.05 | [`src/tabular_rl.py`](src/tabular_rl.py) |
+| SARSA | Tabular, on-policy | Same 135 states | step size 0.05 | [`src/tabular_rl.py`](src/tabular_rl.py) |
+| DQN | Neural network, off-policy | The 4 continuous features, standardized with training-data statistics | 2 hidden layers of 64, replay buffer, target network, based on our HW-2 code | [`src/deep_rl.py`](src/deep_rl.py) |
+
+### Training ([`src/training.py`](src/training.py))
+
+All three algorithms share one training loop, so the comparison is fair:
+
+- the same budget of **100,000 environment steps** (trading days) per run;
+- episodes are random **252-day (one-year) windows** inside 2015-2021;
+- exploration starts fully random and decays linearly to 5% over the first half of training;
+- the same discount factor, **γ = 0.99**;
+- **5 random seeds** per algorithm and stock;
+- every algorithm is evaluated with its **final** model. The 2022 return is recorded every 5,000 steps to draw learning curves, but it is never used to pick a model.
+
+### Ensembles ([`src/ensemble.py`](src/ensemble.py))
+
+For each stock and seed, the three trained agents vote on every trading day.
+
+- **Weighted ensemble:** each agent's weight comes from its terminal return $\bar R_i$ on the 2022 validation year:
+
+  $$w_i = \frac{\exp(\bar R_i/\tau)}{\sum_j \exp(\bar R_j/\tau)}, \qquad \tau = 0.05$$
+
+  The action with the largest total weight wins:
+
+  $$a_t = \arg\max_a \sum_i w_i\,\mathbf{1}[\pi_i(s_t) = a]$$
+
+- **Equal-weight ensemble:** the same vote with $w_i = 1/3$. This is the control.
+- **Ties:** take the action of the single highest-weight agent; if the weights are equal, take Hold if it is tied, otherwise the lowest action number. The rule was fixed before looking at any results.
+- **Same account:** every agent decides from the ensemble's own cash and position, not from its own separate backtest.
+
+### Evaluation ([`src/evaluation.py`](src/evaluation.py))
+
+Every method trades each test year once with exploration off. Buy-and-hold buys with all the cash on the first day, pays the same fee, and holds to the end.
+
+| Metric | Definition |
+|---|---|
+| Terminal return | $R_T = (V_T - V_0)/V_0$ at the end of a test year |
+| Terminal loss category | 1: profit or break-even; 2: loss up to 20%; 3: loss 20-40%; 4: loss over 40%. This is the loss at the **end** of the year, **not** the maximum drawdown. |
+| Stability | Standard deviation across seeds, stocks and test years |
+| Trading behavior | How often each action is chosen, number of trades, total fees |
+
+---
+
+## 4. Latest results
+
+<<RESULTS>>
+
+---
+
+## 5. Repository layout
+
+```
+6650-Final/
+├── README.md                   # this file
+├── requirements.txt            # Python dependencies
+├── src/                        # all project code
+│   ├── config.py               #   every setting and its default (start here to change a decision)
+│   ├── environment.py          #   data download, features, date split, trading environment
+│   ├── tabular_rl.py           #   state discretizer, Q-learning, SARSA
+│   ├── deep_rl.py              #   DQN: network, replay buffer, agent
+│   ├── training.py             #   the training loop shared by all algorithms
+│   ├── ensemble.py             #   softmax weights, weighted vote, tie-break
+│   └── evaluation.py           #   metrics, buy-and-hold, tables, plots
+├── experiments/
+│   └── run_experiments.py      # command-line entry point (phases 1-3)
+├── tests/                      # pytest: accounting, data, agents, determinism, ensemble, statistics
+├── .github/workflows/tests.yml # runs the tests and a short smoke run on every push / pull request
+├── data/raw/                   # daily prices for the default stocks + SHA256SUMS (in git)
+├── results/                    # models, logs, tables, figures (not in git; see results/README.md)
+├── docs/
+│   ├── proposal.md             # full project proposal with equations
+│   └── presentation.md         # slide-by-slide outline for December 2
+└── paper/
+    ├── main.tex                # paper skeleton (LaTeX, 4-6 pages)
+    ├── references.bib
+    └── figures/                # final figures for the paper (in git)
+```
+
+Build the paper with a TeX distribution that has `latexmk`:
 
 ```bash
 cd paper && latexmk -pdf main.tex
 ```
 
-## Implementation Plan
+---
 
-1. Minimal working experiment: verify data, environment, action execution, accounting, and reward; run all three algorithms on one stock.
-2. Train and compare the individual algorithms; save models and learning curves; finish validation.
-3. Weighted ensemble from validation results only, plus the equal-weight baseline.
-4. Scale up: more stocks, fixed yearly test windows, multiple seeds.
-5. Analysis and reporting: metrics, figures, paper, presentation.
-6. Optional: DQN on the discrete state encoding as a control experiment.
+## 6. Running variants
 
-## Open Decisions
+**Command-line options** (all optional except `--phase`):
 
-Every item below has a default in [`src/config.py`](src/config.py) so the code runs today. The defaults are placeholders: confirm or change them, and record the decision here.
+| Option | Meaning | Default |
+|---|---|---|
+| `--phase {1,2,3}` | 1: train and evaluate the algorithms; 2: ensembles; 3: final tables and figures | required |
+| `--tickers AAPL JPM` | Stocks to use | the three in `src/config.py` |
+| `--seeds 0 1 2` | Random seeds | 0-4 |
+| `--algos qlearning dqn` | Algorithms to train in phase 1 | all three |
+| `--steps 20000` | Training steps per run | 100,000 |
+| `--results-dir PATH` | Where outputs go | `results/` |
 
-| Decision | Current default |
+Phases 2 and 3 read what phase 1 saved, so give every phase the same `--tickers` and `--seeds`.
+
+**Changing a design decision** (fee, stocks, dates, number of bins, network size, γ, τ, ...): edit the matching field in [`src/config.py`](src/config.py), then re-run all three phases. Each field has a comment that explains it.
+
+---
+
+## 7. Output files
+
+Everything goes under `results/`. Runs are named `{algorithm}_{TICKER}_seed{n}`, for example `dqn_AAPL_seed0`.
+
+| Path | Contents |
 |---|---|
-| Data source, tickers, dates | yfinance, adjusted prices; AAPL, JPM, XOM; 2015-2025 |
-| Environment | Small custom Gymnasium env (Gym Trading Env uses target-position actions, not cash-fraction orders) |
-| Execution and costs | Fill at day t's close, mark at day t+1's close; 0.1% fee per trade; fractional shares |
-| Training episodes | Random 252-day windows inside 2015-2021 |
-| Tabular state | ret5, ret20, vol20 in 3 quantile bins each (fit on train) x 5 position levels = 135 states |
-| DQN | HW-2-style PyTorch DQN: MLP 64-64, replay, soft target update tau = 0.005 |
-| Budget and selection | 100k env steps per run, gamma = 0.99, 5 seeds; every algorithm uses its final model (no checkpoint selection), so the validation year is used only for the ensemble weights |
-| Ensemble | tau = 0.05; ties go to the top-weighted policy's action, then Hold |
+| `tables/phase3_summary_by_method.csv` | **Main result**, one row per method (columns explained below) |
+| `tables/phase3_paired_comparisons.csv` | Method A vs. method B, year by year: mean difference, 95% bootstrap confidence interval, and how many stock-years A wins |
+| `tables/phase3_summary_by_ticker.csv`, `..._by_window.csv` | The same summary split by stock or by test year |
+| `tables/phase3_seed_stability.csv` | Spread of results across seeds |
+| `tables/phase3_trading_behavior.csv` | Action frequencies, trade counts, fees |
+| `tables/phase{1,2}_{val,test}.csv` | One row per method, stock, seed and year (the raw results) |
+| `tables/phase2_weights.csv` | Ensemble weights and the validation returns they came from |
+| `figures/phase3_terminal_return.png` | Mean test return per method and stock |
+| `figures/phase3_loss_categories.png` | Share of test years in each loss category |
+| `figures/phase3_learning_curves.png` | Validation return during training, one panel per stock |
+| `figures/phase3_action_frequencies.png` | Which actions each method uses |
+| `figures/phase3_values_{TICKER}_{year}.png` | Portfolio value over a test year, all methods (seed 0) |
+| `logs/{run}.csv` | Learning curve of one run |
+| `models/{run}.pkl` / `.pt` | Trained Q-table / DQN weights |
+| `run_manifest.json` | What the last run used: stocks, seeds, all settings, git commit, package versions, data checksums |
 
-- [ ] Data source, final stock list, and date range
-- [ ] Trading environment, and how it supports discrete trade sizing
-- [ ] Keep the 9 actions? Integer vs. fractional shares, commission, execution-price rule
-- [ ] State features, discretization levels, tabular state-space size
-- [ ] DQN from the HW-2 PyTorch implementation or from RLlib
-- [ ] Training budget, number of seeds, hyperparameter ranges
-- [ ] Ensemble temperature $\tau$ and vote tie-breaking rule
-- [ ] Discount factor $\gamma$ (shared across all algorithms) *(added during repo setup)*
-- [ ] Team roles and GitHub workflow
-- [ ] Paper template required by the course (the skeleton uses the plain `article` class) and slide software *(added during repo setup)*
-- [ ] Repository visibility: the deliverables call for a private repository; this one is currently public *(added during repo setup)*
-- [ ] Confirm the equations marked *reconstructed* in [`docs/proposal.md`](docs/proposal.md) *(added during repo setup)*
+**How the summary tables count.** One stock in one test year is one market sample (3 stocks × 3 years = 9). The 5 seeds of an algorithm are averaged within each sample first, because they repeat the same market and only measure training randomness. So `mean`, `median` and `std_windows` are over the 9 samples, `seed_std` is the typical spread between seeds, `n_episodes` counts every evaluated year (windows × seeds), and `share_cat1` to `share_cat4` give the share of those episodes in each loss category.
 
-## Deliverables
+**Every phase uses the same run.** Phase 1 clears `results/` and writes `run_manifest.json` when it finishes. Phases 2 and 3 read the manifest, so they always use the same stocks and seeds, and they stop with an error if the saved results do not match.
 
-1. Original, reproducible code (training, testing, ensemble, evaluation)
-2. Research paper, 4–6 pages
-3. Presentation, 10–15 minutes (12/2)
-4. Private GitHub repository with commit history
+---
+
+## 8. Decisions and their status
+
+The code needed a value for every open question, so each one has a **placeholder default**. Nothing below is final until the team agrees. To change one, edit [`src/config.py`](src/config.py) and update this table.
+
+| Decision | Current default | Status |
+|---|---|---|
+| Data source and price type | yfinance, adjusted prices | Needs team confirmation |
+| Stocks | AAPL, JPM, XOM | Needs team confirmation; more stocks would make the results more reliable (see [limitations](#9-known-limitations)) |
+| Dates | Train 2015-2021, validation 2022, test 2023-2025 | From the proposal |
+| Trading environment | Small custom Gymnasium environment, tested | Proposed: Gym Trading Env uses target positions, not "buy x% of cash" orders |
+| Execution price and fees | Fill at today's close; 0.1% per trade; fractional shares | Needs team confirmation |
+| Actions | The 9 actions above | From the proposal |
+| Tabular state | 3 bins per market feature × 5 position levels = 135 states | Needs team confirmation |
+| DQN implementation | Our HW-2-style PyTorch DQN, 64-64 network | Needs team confirmation |
+| Training budget | 100,000 steps per run, 5 seeds | Needs team confirmation |
+| Discount factor | γ = 0.99 for all algorithms | Needs team confirmation |
+| Model selection | Final model, no checkpoint picking on validation | Decided: using 2022 both to pick checkpoints and to set the weights biased the weighted ensemble toward DQN |
+| Ensemble temperature | τ = 0.05 | Needs team confirmation |
+| Tie-break rule | Top-weight agent, then Hold, then lowest action | Proposed, fixed before seeing results |
+| Equations marked *reconstructed* in the proposal | As written in [`docs/proposal.md`](docs/proposal.md) | Needs confirmation by the outline's author |
+| Paper template and slide software | Plain LaTeX `article` | Ask the instructor |
+| Repository visibility | Public | The course asks for a **private** repository; only the owner can change it |
+| Team roles | Not assigned | Open |
+
+---
+
+## 9. Known limitations
+
+- **Small test sample.** 3 stocks × 3 years = 9 independent market windows. The 5 seeds measure training randomness, not more market data.
+- **Mostly rising markets.** 2023-2025 was strong for these stocks, so buy-and-hold is hard to beat and large losses are rare, which leaves little data for RQ2.
+- **Short validation period.** One year (2022) sets the ensemble weights.
+- **Limited training data.** About 1,760 trading days per stock; 100,000 steps reuse the same history many times, which can lead to overfitting.
+- **Simple market model.** No price impact or bid-ask spread; one stock at a time.
+
+---
+
+## 10. How to contribute
+
+1. Pull the latest `main`, then create a branch: `git checkout -b your-name/short-topic`.
+2. Make the change. If you change a design decision, edit `src/config.py` and the table in [Section 8](#8-decisions-and-their-status).
+3. Run `python -m pytest -q tests` and make sure it passes (GitHub also runs it on your pull request).
+4. Push the branch and open a pull request. Describe what changed and, for experiment changes, how the results moved.
+5. Do not commit `results/`; it is git-ignored on purpose. If you add a stock, commit its `data/raw/{TICKER}.csv` and add its checksum: `cd data/raw && shasum -a 256 *.csv > SHA256SUMS`. Final figures for the paper go in `paper/figures/`.
+
+---
+
+## 11. Deliverables and timeline
+
+| Deliverable | Where | Due |
+|---|---|---|
+| Reproducible code | this repository | with the paper |
+| Presentation, 10-15 minutes | [`docs/presentation.md`](docs/presentation.md) (outline) | **December 2** |
+| Research paper, 4-6 pages | [`paper/`](paper/) | to be confirmed |
+
+| Date | Goal |
+|---|---|
+| Nov 26 | Full pipeline working (done) |
+| Nov 27-29 | Team reviews the defaults; final experiment run; experiments frozen on Nov 29 |
+| Nov 30 - Dec 1 | Slides and rehearsal |
+| Dec 2 | Presentation |
+| After Dec 2 | Paper |

@@ -35,11 +35,12 @@ def train_agent(agent, train_env, *, total_steps: int, eps_start: float, eps_end
     (``train_return`` is the episode's terminal return, (V_T - V_0) / V_0).
     """
     rows, step, episode, t0 = [], 0, 0, time.time()
-    best_val, best_snap = -np.inf, None
+    best_val, best_snap, last_val = -np.inf, None, np.nan
 
     def validate():
-        nonlocal best_val, best_snap
+        nonlocal best_val, best_snap, last_val
         res = run_policy(val_env, lambda o: agent.act(o, explore=False))
+        last_val = res["terminal_return"]
         rows.append({"env_step": step, "episode": episode, "train_return": np.nan,
                      "eval_return": res["terminal_return"], "epsilon": agent.epsilon,
                      "wall_time": time.time() - t0})
@@ -76,5 +77,6 @@ def train_agent(agent, train_env, *, total_steps: int, eps_start: float, eps_end
         agent.restore(best_snap)
     log = pd.DataFrame(rows)
     log["run"] = run_name
-    log.attrs["best_val_return"] = best_val
+    # Validation return of the model the function returns.
+    log.attrs["val_return"] = best_val if keep_best else last_val
     return log

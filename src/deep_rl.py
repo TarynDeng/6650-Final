@@ -55,7 +55,7 @@ class Standardizer:
 class ReplayBuffer:
     """Fixed-capacity circular buffer of (s, a, r, s', terminated)."""
 
-    def __init__(self, capacity: int, obs_dim: int, seed: int | None = None):
+    def __init__(self, capacity: int, obs_dim: int, seed=None):
         self.capacity = capacity
         self.obs = np.zeros((capacity, obs_dim), np.float32)
         self.next_obs = np.zeros((capacity, obs_dim), np.float32)
@@ -109,7 +109,9 @@ class DQNAgent:
         self.gamma = gamma
         self.cfg = cfg
         self.epsilon = cfg.epsilon_start
-        self.rng = np.random.default_rng(seed)
+        # Independent random streams for exploration and replay sampling.
+        explore_seq, buffer_seq = np.random.SeedSequence(seed).spawn(2)
+        self.rng = np.random.default_rng(explore_seq)
         if seed is not None:
             torch.manual_seed(seed)
         dim = len(OBS_NAMES)
@@ -117,7 +119,7 @@ class DQNAgent:
         self.target_net = copy.deepcopy(self.policy_net)
         self.optimizer = torch.optim.AdamW(self.policy_net.parameters(), lr=cfg.lr, amsgrad=True)
         self.loss_fn = nn.SmoothL1Loss()  # Huber loss
-        self.buffer = ReplayBuffer(cfg.buffer_capacity, dim, seed)
+        self.buffer = ReplayBuffer(cfg.buffer_capacity, dim, buffer_seq)
         self.n_updates = 0
 
     def set_epsilon(self, epsilon: float) -> None:

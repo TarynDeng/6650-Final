@@ -20,6 +20,12 @@ env/
 # Data (keep the folder and its README, not the files)
 data/*
 !data/README.md
+# Raw prices for the default tickers ARE committed (yfinance re-adjusts history
+# over time, so a fresh download would not reproduce our results).
+!data/raw/
+data/raw/*
+!data/raw/*.csv
+!data/raw/SHA256SUMS
 
 # Results, logs, and models (keep the folder and its README, not the files)
 results/*

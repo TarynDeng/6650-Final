@@ -1,36 +1,31 @@
 # Data
 
-Market data are **not committed** to git (see `.gitignore`). Only this file is tracked. Anyone can rebuild the data by running the download / preprocessing code in `src/environment.py`.
-
-## Layout
+Daily prices for the default stocks are **committed** in `raw/`, so every teammate runs on exactly the same numbers.
 
 ```
 data/
-├── README.md        # this file (tracked)
-├── raw/             # downloaded daily market data, unmodified
-│   └── {TICKER}.csv
-└── processed/       # features and splits derived from raw/
-    ├── {TICKER}_features.csv
-    └── {TICKER}_splits.json   # date boundaries, discretization bins, normalization stats
+├── README.md
+└── raw/
+    ├── AAPL.csv  JPM.csv  XOM.csv   # Date, Open, High, Low, Close, Volume
+    └── SHA256SUMS                   # checksum of each CSV
 ```
 
-## Conventions
-
-- **Raw files** are exactly what the data source returned: one CSV per ticker, daily bars, indexed by trading date. Do not edit them by hand.
-- **Processed files** are fully reproducible from `raw/`. Anything fit on data (normalization statistics, discretization bins) is fit on the **training split only** and saved next to the features so validation and test runs reuse it unchanged.
-- Dates are ISO format (`YYYY-MM-DD`). Prices are adjusted or unadjusted as decided by the team; record the choice here.
-
-## To decide (see Open Decisions in the main README)
-
-- Data source (e.g. yfinance) and whether prices are split / dividend adjusted
-- Final ticker list (about 3, tentative) and date range (about 2015–2025, tentative)
-
-Record the final choices here:
-
 | Item | Decision |
-|------|----------|
-| Data source | TBD |
-| Tickers | TBD |
-| Date range | TBD |
-| Price adjustment | TBD |
-| Download date | TBD |
+|---|---|
+| Source | Yahoo Finance via `yfinance` 1.8.0 |
+| Tickers | AAPL, JPM, XOM (placeholder default, see the main README) |
+| Date range | 2014-10-01 to 2025-12-31 (2014 only warms up the 20-day features) |
+| Price adjustment | Split- and dividend-adjusted (`auto_adjust=True`) |
+| Download date | 2026-11-26 |
+
+**Why commit the files?** Yahoo Finance re-adjusts all past prices whenever a stock pays a new dividend. Downloading the same dates later would give slightly different prices, and therefore different results.
+
+**Checks.** `src/environment.py` refuses a file whose checksum does not match `SHA256SUMS`. It also rejects files with missing or non-positive prices, gaps longer than a week, or dates that do not cover the experiment.
+
+**Adding a stock.** Add the ticker to `DataConfig.tickers` in `src/config.py` and run phase 1; the file is downloaded on first use. Then commit it and refresh the checksums:
+
+```bash
+cd data/raw && shasum -a 256 *.csv > SHA256SUMS
+```
+
+Do not edit the CSV files by hand.

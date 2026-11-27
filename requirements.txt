@@ -1,11 +1,9 @@
-# Tested with Python 3.12, numpy 2, pandas 2-3, gymnasium 1.2, torch 2.x.
-numpy
-pandas
-gymnasium
-torch
-matplotlib
-yfinance            # data source (default; see src/config.py)
-pytest              # tests/
-
-# Only if the team decides to use RLlib for DQN:
-# ray[rllib]
+# Exact versions the results in README.md were produced with (Python 3.12).
+# Newer versions will most likely work, but may change results slightly.
+numpy==2.5.4
+pandas==3.1.1
+gymnasium==1.2.2
+torch==2.15.0          # CPU build is enough: pip install torch --index-url https://download.pytorch.org/whl/cpu
+matplotlib==3.11.2
+yfinance==1.8.0        # only needed to download tickers that are not in data/raw/
+pytest==9.2.0

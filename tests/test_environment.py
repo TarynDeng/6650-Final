@@ -127,3 +127,11 @@ def test_random_training_windows_have_fixed_length():
             steps += 1
         assert steps == 29
     assert len(starts) > 1
+
+
+def test_tiny_leftover_trades_are_skipped():
+    env = TradingEnv(make_features(), EnvConfig(fee_rate=0.001))
+    env.reset(seed=0)
+    env.step(4)  # all cash into stock; only float dust can be left
+    _, _, _, _, info = env.step(4)  # "buy" again with ~0 cash
+    assert info["traded_shares"] == 0 and info["fee"] == 0
