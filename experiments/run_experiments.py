@@ -47,7 +47,7 @@ import torch  # noqa: E402
 from src.config import ExperimentConfig  # noqa: E402
 from src.deep_rl import DQNAgent, Standardizer  # noqa: E402
 from src.ensemble import EnsemblePolicy, equal_weights, softmax_weights  # noqa: E402
-from src.environment import TradingEnv, load_ticker, read_checksums  # noqa: E402
+from src.environment import RAW_DIR, TradingEnv, file_sha256, load_ticker  # noqa: E402
 from src.evaluation import (buy_and_hold_policy, plot_action_frequencies,  # noqa: E402
                             plot_learning_curves, plot_learning_curves_by_ticker,
                             plot_loss_categories, plot_method_returns,
@@ -94,11 +94,33 @@ def package_versions() -> dict:
             "torch": torch.__version__, "matplotlib": matplotlib.__version__}
 
 
+RESULT_ITEMS = {"models", "logs", "tables", "figures", MANIFEST, "README.md", ".gitkeep", ".DS_Store"}
+
+
 def read_manifest(out: Path) -> dict:
     path = out / MANIFEST
     if not path.exists():
         sys.exit(f"{path} not found: run --phase 1 first.")
     return json.loads(path.read_text())
+
+
+def config_dict(cfg: ExperimentConfig) -> dict:
+    """The config as plain JSON types, so it compares equal to the saved manifest."""
+    return json.loads(json.dumps(dataclasses.asdict(cfg), default=str))
+
+
+def data_hashes(tickers) -> dict:
+    """SHA-256 of the price files actually on disk."""
+    return {t: file_sha256(RAW_DIR / f"{t}.csv") for t in tickers}
+
+
+def check_results_dir(out: Path) -> None:
+    """Refuse to clear a folder that does not look like a results folder."""
+    if out.exists():
+        unexpected = sorted(p.name for p in out.iterdir() if p.name not in RESULT_ITEMS)
+        if unexpected:
+            sys.exit(f"{out} contains {unexpected[:5]}, so it does not look like a results "
+                     "folder. Refusing to clear it; choose an empty or results folder.")
 
 
 def make_agent(algo: str, splits: dict, cfg: ExperimentConfig, seed: int):
@@ -135,6 +157,10 @@ def run_phase1(args):
     seeds = args.seeds if args.seeds is not None else list(cfg.train.seeds)
     steps = args.steps or cfg.train.total_env_steps
     out = args.results_dir
+    check_results_dir(out)
+    # Load and validate every ticker first: a bad ticker or data file must not
+    # destroy the previous run's results.
+    all_splits = {t: load_ticker(t, cfg.data) for t in tickers}
     # Phase 1 starts a new experiment: clear the previous one so that old
     # models, logs and tables can never be mixed into this run's results.
     for sub in ("models", "logs", "tables", "figures"):
@@ -146,7 +172,7 @@ def run_phase1(args):
 
     eval_rows, logs = [], []
     for ticker in tickers:
-        splits = load_ticker(ticker, cfg.data)
+        splits = all_splits[ticker]
         print(f"== {ticker}: train {len(splits['train'])} days, val {len(splits['val'])}, "
               f"test {[len(d) for d in splits['test']]}")
         rows, bh_traj = evaluate_all(buy_and_hold_policy, splits, cfg,
@@ -193,14 +219,12 @@ def run_phase1(args):
                              title=f"{ticker}: validation return during training")
     # Written last, so it only exists when phase 1 finished. Phases 2 and 3
     # read it to use exactly the same tickers, seeds and runs.
-    checksums = read_checksums()
     manifest = {"tickers": tickers, "seeds": seeds, "algos": args.algos,
                 "total_env_steps": steps, "git_commit": git_commit(),
-                "packages": package_versions(),
-                "data_sha256": {t: checksums.get(f"{t}.csv", "not recorded") for t in tickers},
+                "packages": package_versions(), "data_sha256": data_hashes(tickers),
                 "runs": [f"{a}_{t}_seed{s}" for t in tickers for s in seeds for a in args.algos],
-                "config": dataclasses.asdict(cfg)}
-    (out / MANIFEST).write_text(json.dumps(manifest, indent=2, default=str))
+                "config": config_dict(cfg)}
+    (out / MANIFEST).write_text(json.dumps(manifest, indent=2))
     print("\nTest windows, terminal return by method:")
     print(summarize(results.query("split == 'test'"), by=("method",)).round(3).to_string())
 
@@ -214,14 +238,22 @@ COMPARISONS = [("qlearning", "buy_and_hold"), ("sarsa", "buy_and_hold"), ("dqn",
                ("weighted_ens", "equal_ens"), ("equal_ens", "qlearning")]
 
 
-def _settings(args, out: Path):
-    """Tickers and seeds of the phase 1 run in ``out`` (phases 2 and 3 must match)."""
+def _settings(args, out: Path, cfg: ExperimentConfig):
+    """Settings of the phase 1 run in ``out``. Phases 2 and 3 must use exactly
+    the same stocks, seeds, config and data, or they stop with an error."""
     m = read_manifest(out)
     if set(m["algos"]) != set(ALGORITHMS):
         sys.exit(f"Phase 1 trained only {m['algos']}; the ensembles need all of {ALGORITHMS}.")
     for name, given in (("tickers", args.tickers), ("seeds", args.seeds)):
-        if given is not None and list(given) != list(m[name]):
+        if given is not None and sorted(given) != sorted(m[name]):
             sys.exit(f"--{name} {given} differs from phase 1 ({m[name]}). Omit it, or re-run phase 1.")
+    now = config_dict(cfg)
+    changed = [f"{group}.{key}" for group in now for key in now[group]
+               if m["config"].get(group, {}).get(key) != now[group][key]]
+    if changed:
+        sys.exit(f"src/config.py changed since phase 1 ({', '.join(changed)}). Re-run phase 1.")
+    if data_hashes(m["tickers"]) != m["data_sha256"]:
+        sys.exit("Price files in data/raw/ changed since phase 1. Re-run phase 1.")
     return m["tickers"], m["seeds"], m
 
 
@@ -244,7 +276,7 @@ def run_phase2(args):
     """
     cfg = ExperimentConfig()
     out = args.results_dir
-    tickers, seeds, _ = _settings(args, out)
+    tickers, seeds, _ = _settings(args, out, cfg)
     torch.set_num_threads(1)
     val1 = pd.read_csv(out / "tables" / "phase1_val.csv")
     eval_rows, weight_rows = [], []
@@ -281,7 +313,7 @@ def run_phase3(args):
     """Final out-of-sample comparison of all six methods: tables and figures."""
     cfg = ExperimentConfig()
     out = args.results_dir
-    tickers, seeds, manifest = _settings(args, out)
+    tickers, seeds, manifest = _settings(args, out, cfg)
     torch.set_num_threads(1)
     if not (out / "tables" / "phase2_test.csv").exists():
         sys.exit("Phase 2 results not found: run --phase 2 first.")

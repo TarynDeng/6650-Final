@@ -73,5 +73,25 @@ def test_summary_uses_market_windows_as_samples():
 def test_paired_comparison():
     c = paired_comparison(_fake_results(), "rl", "bh")
     assert c["mean_diff"] == pytest.approx(-0.01)
-    assert c["a_wins"] == 0 and c["n_windows"] == 4
-    assert c["ci_low"] == pytest.approx(-0.01) and c["ci_high"] == pytest.approx(-0.01)
+    assert c["a_wins"] == 0 and c["n_windows"] == 4 and c["n_years"] == 2
+    for k in ("ci_low", "ci_high", "ci_year_low", "ci_year_high"):
+        assert c[k] == pytest.approx(-0.01)
+
+
+def test_year_bootstrap_is_wider_when_years_disagree():
+    r = _fake_results()
+    r.loc[(r.method == "rl") & (r.window == "2024"), "terminal_return"] += 0.2
+    c = paired_comparison(r, "rl", "bh")
+    assert c["ci_year_low"] < c["mean_diff"] < c["ci_year_high"]
+
+
+def test_empty_price_data_is_rejected():
+    empty = pd.DataFrame({"Close": []}, index=pd.DatetimeIndex([]))
+    with pytest.raises(ValueError, match="no price data"):
+        validate_prices(empty, "X", "2020-01-01", "2020-12-31")
+
+
+def test_missing_committed_file_is_not_redownloaded(tmp_path):
+    (tmp_path / "SHA256SUMS").write_text(CHECKSUM_FILE.read_text())
+    with pytest.raises(FileNotFoundError, match="git checkout"):
+        load_price_data("AAPL", CFG.download_start, CFG.download_end, cache_dir=tmp_path)

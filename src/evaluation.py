@@ -143,19 +143,35 @@ def summarize(results: pd.DataFrame, by=("method",)) -> pd.DataFrame:
 
 def paired_comparison(results: pd.DataFrame, a: str, b: str, n_boot: int = 10_000,
                       seed: int = 0) -> dict:
-    """Compare methods ``a`` and ``b`` window by window (seeds averaged first).
+    """Compare methods ``a`` and ``b`` stock-year by stock-year (seeds averaged first).
 
-    Returns the mean difference (a - b) in terminal return, a 95% bootstrap
-    confidence interval over market windows, and how many windows a wins.
+    Returns the mean difference (a - b) in terminal return, how many
+    stock-years ``a`` wins, and two 95% bootstrap intervals:
+
+    * ``ci_low`` / ``ci_high`` resample stock-years as if independent. They are
+      too narrow, because stocks in the same year share the market's move.
+    * ``ci_year_low`` / ``ci_year_high`` resample whole test years (all stocks of
+      a year together). This respects that dependence but, with only three
+      years, is very coarse.
+
+    With this little data, read both as rough indications, not proof.
     """
     w = window_means(results).pivot_table(index=["ticker", "window"], columns="method",
                                           values="terminal_return")
-    d = (w[a] - w[b]).dropna().to_numpy()
+    diff = (w[a] - w[b]).dropna()
+    d = diff.to_numpy()
     rng = np.random.default_rng(seed)
     boot = d[rng.integers(0, len(d), (n_boot, len(d)))].mean(1)
-    lo, hi = np.percentile(boot, [2.5, 97.5])
-    return {"method_a": a, "method_b": b, "mean_diff": d.mean(), "ci_low": lo, "ci_high": hi,
-            "a_wins": int((d > 0).sum()), "n_windows": len(d)}
+    years = diff.groupby(level="window")
+    year_sums = years.sum().to_numpy()
+    year_counts = years.size().to_numpy()
+    pick = rng.integers(0, len(year_sums), (n_boot, len(year_sums)))
+    boot_year = year_sums[pick].sum(1) / year_counts[pick].sum(1)
+    return {"method_a": a, "method_b": b, "mean_diff": d.mean(),
+            "ci_low": np.percentile(boot, 2.5), "ci_high": np.percentile(boot, 97.5),
+            "ci_year_low": np.percentile(boot_year, 2.5),
+            "ci_year_high": np.percentile(boot_year, 97.5),
+            "a_wins": int((d > 0).sum()), "n_windows": len(d), "n_years": len(year_sums)}
 
 
 def plot_learning_curves(logs: pd.DataFrame, out_path, title: str = "") -> None:

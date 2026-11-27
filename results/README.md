@@ -11,7 +11,7 @@ results/
 └── figures/            # plots for the paper and slides
 ```
 
-Phase 1 deletes the previous contents of `results/` before it starts, so results from different runs are never mixed. To keep an older run, use `--results-dir` with another folder.
+Phase 1 first checks the price data, then deletes the previous run's `models/`, `logs/`, `tables/`, `figures/` and `run_manifest.json`, so results from different runs are never mixed. It refuses to clear a folder that contains other files. To keep an older run, use `--results-dir` with another folder.
 
 ## Naming
 

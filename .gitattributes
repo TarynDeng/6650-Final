@@ -1,0 +1,4 @@
+# Keep the committed price files byte-for-byte identical on every OS
+# (their SHA-256 checksums are verified when they are loaded).
+data/raw/*.csv -text
+data/raw/SHA256SUMS -text

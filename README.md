@@ -10,7 +10,7 @@ We train three RL algorithms (Q-learning, SARSA, DQN) to trade a single stock on
 
 | | |
 |---|---|
-| **Status** | The full pipeline works: data, environment, all three algorithms, both ensembles, evaluation, tables and figures. 30 tests run automatically on every push and pull request. |
+| **Status** | The full pipeline works: data, environment, all three algorithms, both ensembles, evaluation, tables and figures. 39 tests run automatically on pushes to `main` and on every pull request. |
 | **Still to do** | Team review of the [placeholder decisions](#8-decisions-and-their-status), slides, paper |
 | **Full proposal** | [`docs/proposal.md`](docs/proposal.md) (all equations and design rules) |
 | **Slide outline** | [`docs/presentation.md`](docs/presentation.md) |
@@ -34,7 +34,7 @@ We train three RL algorithms (Q-learning, SARSA, DQN) to trade a single stock on
 
 ## 1. Quick start
 
-Requires Python 3.10 or newer (tested with 3.12). Everything runs on a laptop CPU; no GPU is needed.
+Requires **Python 3.12** (the pinned package versions need it). Everything runs on a laptop CPU; no GPU is needed.
 
 **1. Install**
 
@@ -86,7 +86,7 @@ The results land in `results/`. Start with `results/tables/phase3_summary_by_met
 ## 3. How the experiment works
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[Yahoo Finance<br/>daily prices] --> B[Features<br/>ret5, ret20, vol20]
     B --> C{Split by date}
     C -->|2015-2021| D[Train<br/>Q-learning, SARSA, DQN]
@@ -212,7 +212,7 @@ The final run with the current settings is in progress; this section will be upd
 ├── experiments/
 │   └── run_experiments.py      # command-line entry point (phases 1-3)
 ├── tests/                      # pytest: accounting, data, agents, determinism, ensemble, statistics
-├── .github/workflows/tests.yml # runs the tests and a short smoke run on every push / pull request
+├── .github/workflows/tests.yml # runs the tests and a short smoke run on pushes to main and pull requests
 ├── data/raw/                   # daily prices for the default stocks + SHA256SUMS (in git)
 ├── results/                    # models, logs, tables, figures (not in git; see results/README.md)
 ├── docs/
@@ -241,11 +241,11 @@ cd paper && latexmk -pdf main.tex
 | `--phase {1,2,3}` | 1: train and evaluate the algorithms; 2: ensembles; 3: final tables and figures | required |
 | `--tickers AAPL JPM` | Stocks to use | the three in `src/config.py` |
 | `--seeds 0 1 2` | Random seeds | 0-4 |
-| `--algos qlearning dqn` | Algorithms to train in phase 1 | all three |
+| `--algos qlearning dqn` | Algorithms to train in phase 1 (phases 2 and 3 need all three) | all three |
 | `--steps 20000` | Training steps per run | 100,000 |
 | `--results-dir PATH` | Where outputs go | `results/` |
 
-Phases 2 and 3 read what phase 1 saved, so give every phase the same `--tickers` and `--seeds`.
+Phases 2 and 3 automatically use the stocks and seeds of the last phase 1 run. They stop with an error if `src/config.py` or the files in `data/raw/` changed since then.
 
 **Changing a design decision** (fee, stocks, dates, number of bins, network size, γ, τ, ...): edit the matching field in [`src/config.py`](src/config.py), then re-run all three phases. Each field has a comment that explains it.
 
@@ -258,14 +258,14 @@ Everything goes under `results/`. Runs are named `{algorithm}_{TICKER}_seed{n}`,
 | Path | Contents |
 |---|---|
 | `tables/phase3_summary_by_method.csv` | **Main result**, one row per method (columns explained below) |
-| `tables/phase3_paired_comparisons.csv` | Method A vs. method B, year by year: mean difference, 95% bootstrap confidence interval, and how many stock-years A wins |
+| `tables/phase3_paired_comparisons.csv` | Method A vs. method B, stock-year by stock-year: mean difference, how many stock-years A wins, and two 95% bootstrap intervals (see below) |
 | `tables/phase3_summary_by_ticker.csv`, `..._by_window.csv` | The same summary split by stock or by test year |
 | `tables/phase3_seed_stability.csv` | Spread of results across seeds |
 | `tables/phase3_trading_behavior.csv` | Action frequencies, trade counts, fees |
 | `tables/phase{1,2}_{val,test}.csv` | One row per method, stock, seed and year (the raw results) |
 | `tables/phase2_weights.csv` | Ensemble weights and the validation returns they came from |
 | `figures/phase3_terminal_return.png` | Mean test return per method and stock |
-| `figures/phase3_loss_categories.png` | Share of test years in each loss category |
+| `figures/phase3_loss_categories.png` | Share of test episodes (stock-years × seeds) in each loss category |
 | `figures/phase3_learning_curves.png` | Validation return during training, one panel per stock |
 | `figures/phase3_action_frequencies.png` | Which actions each method uses |
 | `figures/phase3_values_{TICKER}_{year}.png` | Portfolio value over a test year, all methods (seed 0) |
@@ -273,9 +273,11 @@ Everything goes under `results/`. Runs are named `{algorithm}_{TICKER}_seed{n}`,
 | `models/{run}.pkl` / `.pt` | Trained Q-table / DQN weights |
 | `run_manifest.json` | What the last run used: stocks, seeds, all settings, git commit, package versions, data checksums |
 
-**How the summary tables count.** One stock in one test year is one market sample (3 stocks × 3 years = 9). The 5 seeds of an algorithm are averaged within each sample first, because they repeat the same market and only measure training randomness. So `mean`, `median` and `std_windows` are over the 9 samples, `seed_std` is the typical spread between seeds, `n_episodes` counts every evaluated year (windows × seeds), and `share_cat1` to `share_cat4` give the share of those episodes in each loss category.
+**How the summary tables count.** One stock in one test year (a "stock-year") is one market sample: 3 stocks × 3 years = 9. The 5 seeds of an algorithm are averaged within each stock-year first, because they repeat the same market and only measure training randomness. So `mean`, `median` and `std_windows` are over the 9 stock-years, `seed_std` is the typical spread between seeds, `n_episodes` counts every evaluated year (stock-years × seeds), and `share_cat1` to `share_cat4` give the share of those episodes in each loss category.
 
-**Every phase uses the same run.** Phase 1 clears `results/` and writes `run_manifest.json` when it finishes. Phases 2 and 3 read the manifest, so they always use the same stocks and seeds, and they stop with an error if the saved results do not match.
+**The two confidence intervals in the paired comparisons.** `ci_low`/`ci_high` resample the 9 stock-years as if they were independent. They are too narrow, because stocks in the same year share the market's move. `ci_year_low`/`ci_year_high` resample whole years, which respects that, but with only 3 years the result is very coarse. Treat both as rough indications.
+
+**Every phase uses the same run.** Phase 1 first checks all the price data, then deletes the previous run's `models/`, `logs/`, `tables/`, `figures/` and `run_manifest.json`, and writes a new manifest when it finishes. It refuses to clear a folder that contains anything else. Phases 2 and 3 read the manifest and stop with an error if the stocks, seeds, `src/config.py` or the price files no longer match.
 
 ---
 
@@ -307,7 +309,7 @@ The code needed a value for every open question, so each one has a **placeholder
 
 ## 9. Known limitations
 
-- **Small test sample.** 3 stocks × 3 years = 9 independent market windows. The 5 seeds measure training randomness, not more market data.
+- **Small test sample.** 3 stocks × 3 years = 9 stock-years, and they are not independent: stocks in the same year share the market's move, so the effective sample is closer to 3 years. The 5 seeds measure training randomness, not more market data.
 - **Mostly rising markets.** 2023-2025 was strong for these stocks, so buy-and-hold is hard to beat and large losses are rare, which leaves little data for RQ2.
 - **Short validation period.** One year (2022) sets the ensemble weights.
 - **Limited training data.** About 1,760 trading days per stock; 100,000 steps reuse the same history many times, which can lead to overfitting.

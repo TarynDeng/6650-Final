@@ -88,6 +88,8 @@ def read_checksums(path: Path = CHECKSUM_FILE) -> dict[str, str]:
 
 def validate_prices(df: pd.DataFrame, ticker: str, start: str, end: str) -> None:
     """Fail loudly on data problems instead of training on bad prices."""
+    if df.empty:
+        raise ValueError(f"{ticker}: no price data between {start} and {end}")
     problems = []
     if not df.index.is_monotonic_increasing or df.index.has_duplicates:
         problems.append("dates are not strictly increasing")
@@ -103,8 +105,7 @@ def validate_prices(df: pd.DataFrame, ticker: str, start: str, end: str) -> None
         problems.append(f"covers {df.index.min().date()}..{df.index.max().date()}, "
                         f"not {start}..{end}")
     if problems:
-        raise ValueError(f"{ticker} price data failed checks: " + "; ".join(problems)
-                         + f". Delete data/raw/{ticker}.csv to re-download.")
+        raise ValueError(f"{ticker} price data failed checks: " + "; ".join(problems) + ".")
 
 
 def load_price_data(ticker: str, start: str, end: str, cache_dir: Path = RAW_DIR,
@@ -120,11 +121,20 @@ def load_price_data(ticker: str, start: str, end: str, cache_dir: Path = RAW_DIR
     """
     cache_dir = Path(cache_dir)
     path = cache_dir / f"{ticker}.csv"
+    expected = read_checksums(cache_dir / "SHA256SUMS").get(path.name)
+    if expected and not path.exists():
+        # A committed ticker must never be silently re-downloaded: the new
+        # prices would differ from everyone else's.
+        raise FileNotFoundError(f"{path} is missing but has a recorded checksum. Restore it "
+                                f"with `git checkout -- data/raw/{path.name}`.")
     if path.exists():
-        expected = read_checksums(cache_dir / "SHA256SUMS").get(path.name)
-        if verify_checksum and expected and file_sha256(path) != expected:
-            raise ValueError(f"{path} does not match its recorded checksum in SHA256SUMS. "
-                             f"Restore the committed file with `git checkout -- data/raw/{path.name}`.")
+        if verify_checksum:
+            if expected is None:
+                print(f"Warning: {path.name} has no checksum in SHA256SUMS, so it is not "
+                      "verified. Commit it and add its checksum (see data/README.md).")
+            elif file_sha256(path) != expected:
+                raise ValueError(f"{path} does not match its recorded checksum in SHA256SUMS. "
+                                 f"Restore the committed file with `git checkout -- data/raw/{path.name}`.")
         df = pd.read_csv(path, index_col="Date", parse_dates=True)
     else:
         import yfinance as yf
