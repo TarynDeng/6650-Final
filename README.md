@@ -4,7 +4,7 @@
 
 DSAN 6650 (Reinforcement Learning), Final Project. Presentation due **12/2**.
 
-> **Status:** Phase 1 pipeline works end to end. Data loading, the trading environment, Q-learning, SARSA, DQN, buy-and-hold, and evaluation are implemented and tested. The ensemble (Phase 2) and the final comparison (Phase 3) are not implemented yet. Every setting the team has not decided yet has a default in [`src/config.py`](src/config.py); see [Open Decisions](#open-decisions). The full proposal, including all equations, is in [`docs/proposal.md`](docs/proposal.md).
+> **Status:** the full pipeline works end to end: data loading, the trading environment, Q-learning, SARSA, DQN, the weighted and equal-weight ensembles, buy-and-hold, evaluation tables and figures. All three phases run with one command each. Every setting the team has not decided yet has a default in [`src/config.py`](src/config.py); see [Open Decisions](#open-decisions). The full proposal, including all equations, is in [`docs/proposal.md`](docs/proposal.md).
 
 ## Overview
 
@@ -87,7 +87,7 @@ About 3 stocks and about 5 training seeds per algorithm (both tentative). The te
 │   ├── environment.py          # data loading, features, trading env
 │   ├── tabular_rl.py           # state discretization, Q-learning, SARSA
 │   ├── deep_rl.py              # DQN (replay buffer, target network)
-│   ├── ensemble.py             # softmax weights, weighted / equal-weight voting (TODO)
+│   ├── ensemble.py             # softmax weights, weighted / equal-weight voting
 │   ├── evaluation.py           # terminal return / loss, rollouts, buy-and-hold, plots
 │   └── training.py             # one training loop shared by all algorithms
 ├── tests/                      # accounting and agent tests (pytest)
@@ -108,14 +108,21 @@ Run the tests, then Phase 1. The first run downloads daily prices from yfinance 
 ```bash
 python -m pytest -q tests
 python experiments/run_experiments.py --phase 1 --tickers AAPL --seeds 0   # one stock, one seed (~1 min)
-python experiments/run_experiments.py --phase 1                            # all tickers and seeds in src/config.py
+
+# Full experiment, all tickers and seeds in src/config.py (~20 min on a laptop CPU)
+python experiments/run_experiments.py --phase 1   # train Q-learning, SARSA, DQN; evaluate them and buy-and-hold
+python experiments/run_experiments.py --phase 2   # weighted and equal-weight ensembles (weights from 2022 only)
+python experiments/run_experiments.py --phase 3   # final tables and figures for all six methods
 ```
 
+Phases 2 and 3 read the Phase 1 models and tables, so pass the same `--tickers` / `--seeds` to every phase.
+
 Outputs go to `results/` (see [`results/README.md`](results/README.md)):
-- `tables/phase1_{val,test}.csv`: one row per method, ticker, seed, and window;
+- `tables/phase{1,2}_{val,test}.csv`: one row per method, ticker, seed, and window; `phase2_weights.csv`: ensemble weights;
+- `tables/phase3_*.csv`: final summaries by method, ticker, test year, seed stability, and trading behavior;
 - `logs/{algo}_{TICKER}_seed{n}.csv`: learning curves;
 - `models/`: trained Q-tables and DQN weights;
-- `figures/`: learning curves and portfolio-value plots.
+- `figures/phase3_*.png`: terminal return, loss categories, action frequencies, learning curves, and portfolio-value curves.
 
 Build the paper (needs a TeX distribution with `latexmk`):
 

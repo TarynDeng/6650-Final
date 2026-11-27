@@ -7,8 +7,13 @@ Usage::
     python experiments/run_experiments.py --phase 1 --tickers AAPL --seeds 0
     python experiments/run_experiments.py --phase 1                 # all tickers / seeds in config
 
-    python experiments/run_experiments.py --phase 2   # ensembles (not implemented yet)
-    python experiments/run_experiments.py --phase 3   # final comparison (not implemented yet)
+    # Phase 2: weighted and equal-weight ensembles of the Phase 1 agents.
+    python experiments/run_experiments.py --phase 2
+    # Phase 3: final tables and figures for all six methods on the test windows.
+    python experiments/run_experiments.py --phase 3
+
+Phases 2 and 3 read the Phase 1 models and tables, so pass the same
+``--tickers`` / ``--seeds`` to every phase.
 
 Phases (``docs/proposal.md`` Section 6):
     1. Train Q-learning, SARSA, and DQN under identical data splits, actions,
@@ -40,8 +45,11 @@ import torch  # noqa: E402
 
 from src.config import ExperimentConfig  # noqa: E402
 from src.deep_rl import DQNAgent, Standardizer  # noqa: E402
+from src.ensemble import EnsemblePolicy, equal_weights, softmax_weights  # noqa: E402
 from src.environment import TradingEnv, load_ticker  # noqa: E402
-from src.evaluation import (buy_and_hold_policy, plot_learning_curves,  # noqa: E402
+from src.evaluation import (buy_and_hold_policy, plot_action_frequencies,  # noqa: E402
+                            plot_learning_curves, plot_learning_curves_by_ticker,
+                            plot_loss_categories, plot_method_returns,
                             plot_portfolio_values, result_row, run_policy, summarize)
 from src.tabular_rl import QLearningAgent, SarsaAgent, StateDiscretizer  # noqa: E402
 from src.training import train_agent  # noqa: E402
@@ -161,14 +169,124 @@ def run_phase1(args):
     print(summarize(results.query("split == 'test'"), by=("method",)).round(3).to_string())
 
 
+METHOD_ORDER = ["buy_and_hold", "qlearning", "sarsa", "dqn", "weighted_ens", "equal_ens"]
+
+
+def _settings(args, cfg):
+    tickers = args.tickers or list(cfg.data.tickers)
+    seeds = args.seeds if args.seeds is not None else list(cfg.train.seeds)
+    return tickers, seeds
+
+
+def load_members(ticker: str, seed: int, splits: dict, cfg: ExperimentConfig, models_dir: Path):
+    """Load the three Phase 1 agents trained with ``seed`` on ``ticker``."""
+    members = {}
+    for algo in ALGORITHMS:
+        agent, _, ext = make_agent(algo, splits, cfg, seed)
+        agent.load(models_dir / f"{algo}_{ticker}_seed{seed}.{ext}")
+        members[algo] = agent
+    return members
+
+
 def run_phase2(args):
-    """TODO: compute validation terminal returns and ensemble weights."""
-    raise NotImplementedError
+    """Weighted and equal-weight ensembles from the Phase 1 agents.
+
+    For each ticker and seed, the ensemble members are the Q-learning, SARSA
+    and DQN agents trained with that seed. Each member's weight uses its
+    terminal return on the validation year (2022) only.
+    """
+    cfg = ExperimentConfig()
+    tickers, seeds = _settings(args, cfg)
+    out = args.results_dir
+    torch.set_num_threads(1)
+    val1 = pd.read_csv(out / "tables" / "phase1_val.csv")
+    eval_rows, weight_rows = [], []
+    for ticker in tickers:
+        splits = load_ticker(ticker, cfg.data)
+        for seed in seeds:
+            members = load_members(ticker, seed, splits, cfg, out / "models")
+            val_ret = [val1.query("method == @a and ticker == @ticker and seed == @seed")
+                       ["terminal_return"].item() for a in ALGORITHMS]
+            ensembles = {
+                "weighted_ens": softmax_weights(val_ret, cfg.ensemble.tau),
+                "equal_ens": equal_weights(len(ALGORITHMS)),
+            }
+            for name, w in ensembles.items():
+                weight_rows.append({"method": name, "ticker": ticker, "seed": seed,
+                                    **{f"val_{a}": r for a, r in zip(ALGORITHMS, val_ret)},
+                                    **{f"w_{a}": x for a, x in zip(ALGORITHMS, w)}})
+                ens = EnsemblePolicy(list(members.values()), w, cfg.ensemble.tie_break)
+                rows, _ = evaluate_all(lambda e=ens: (lambda o: e.act(o)), splits, cfg,
+                                       {"method": name, "ticker": ticker, "seed": seed})
+                eval_rows += rows
+            w = ensembles["weighted_ens"]
+            print(f"  {ticker} seed {seed}: weights "
+                  + ", ".join(f"{a} {x:.2f}" for a, x in zip(ALGORITHMS, w)))
+    results = pd.DataFrame(eval_rows)
+    for split in ("val", "test"):
+        results.query("split == @split").to_csv(out / "tables" / f"phase2_{split}.csv", index=False)
+    pd.DataFrame(weight_rows).to_csv(out / "tables" / "phase2_weights.csv", index=False)
+    print("\nTest windows, ensembles:")
+    print(summarize(results.query("split == 'test'"), by=("method",)).round(3).to_string())
 
 
 def run_phase3(args):
-    """TODO: evaluate all methods and buy-and-hold on the test windows."""
-    raise NotImplementedError
+    """Final out-of-sample comparison of all six methods: tables and figures."""
+    cfg = ExperimentConfig()
+    tickers, seeds = _settings(args, cfg)
+    out = args.results_dir
+    torch.set_num_threads(1)
+    test = pd.concat([pd.read_csv(out / "tables" / f"phase{p}_test.csv") for p in (1, 2)],
+                     ignore_index=True)
+    test = test[test["ticker"].isin(tickers)]
+    test.to_csv(out / "tables" / "phase3_test.csv", index=False)
+
+    order = [m for m in METHOD_ORDER if m in set(test["method"])]
+    by_method = summarize(test, by=("method",)).reindex(order)
+    by_method.to_csv(out / "tables" / "phase3_summary_by_method.csv")
+    summarize(test, by=("method", "ticker")).to_csv(out / "tables" / "phase3_summary_by_ticker.csv")
+    summarize(test, by=("method", "window")).to_csv(out / "tables" / "phase3_summary_by_window.csv")
+    # Seed stability: per (method, ticker), mean test return of each seed, then
+    # the spread of those means across seeds.
+    per_seed = (test.query("seed >= 0").groupby(["method", "ticker", "seed"])["terminal_return"]
+                .mean().groupby(["method", "ticker"]).agg(["mean", "std", "min", "max"]))
+    per_seed.to_csv(out / "tables" / "phase3_seed_stability.csv")
+    behavior = test.groupby("method")[[f"freq_a{a}" for a in range(9)] + ["n_trades", "total_fees"]].mean()
+    behavior.reindex(order).to_csv(out / "tables" / "phase3_trading_behavior.csv")
+
+    figs = out / "figures"
+    plot_method_returns(test, order, figs / "phase3_terminal_return.png")
+    plot_loss_categories(test, order, figs / "phase3_loss_categories.png")
+    plot_action_frequencies(behavior.reindex(order), figs / "phase3_action_frequencies.png")
+    logs = pd.concat([pd.read_csv(p) for p in sorted((out / "logs").glob("*_seed*.csv"))],
+                     ignore_index=True)
+    val1 = pd.read_csv(out / "tables" / "phase1_val.csv")
+    bh_val = val1.query("method == 'buy_and_hold'").set_index("ticker")["terminal_return"].to_dict()
+    plot_learning_curves_by_ticker(logs[logs["ticker"].isin(tickers)],
+                                   figs / "phase3_learning_curves.png", benchmarks=bh_val)
+
+    # Portfolio-value curves for the first seed, every method, every test window.
+    seed = seeds[0]
+    for ticker in tickers:
+        splits = load_ticker(ticker, cfg.data)
+        members = load_members(ticker, seed, splits, cfg, out / "models")
+        val_ret = [val1.query("method == @a and ticker == @ticker and seed == @seed")
+                   ["terminal_return"].item() for a in ALGORITHMS]
+        policies = {"buy_and_hold": buy_and_hold_policy}
+        policies.update({a: (lambda m=m: (lambda o: m.act(o, explore=False))) for a, m in members.items()})
+        for name, w in (("weighted_ens", softmax_weights(val_ret, cfg.ensemble.tau)),
+                        ("equal_ens", equal_weights(len(ALGORITHMS)))):
+            ens = EnsemblePolicy(list(members.values()), w, cfg.ensemble.tie_break)
+            policies[name] = lambda e=ens: (lambda o: e.act(o))
+        for (start, _), df in zip(cfg.data.test_windows, splits["test"]):
+            traj = {n: run_policy(TradingEnv(df, cfg.env), make()) for n, make in policies.items()}
+            plot_portfolio_values(traj, figs / f"phase3_values_{ticker}_{start[:4]}.png",
+                                  title=f"{ticker} test {start[:4]} (seed {seed})")
+
+    print("Test windows, all methods (3 windows x tickers x seeds):")
+    print(by_method.round(3).to_string())
+    print("\nSeed stability (mean test return per seed, spread across seeds):")
+    print(per_seed.round(3).to_string())
 
 
 def main(argv=None):

@@ -131,6 +131,32 @@ def plot_learning_curves(logs: pd.DataFrame, out_path, title: str = "") -> None:
     _save(fig, out_path)
 
 
+def plot_learning_curves_by_ticker(logs: pd.DataFrame, out_path, benchmarks: dict | None = None) -> None:
+    """One panel per ticker: validation return vs. env steps, mean +/- std over seeds.
+
+    ``benchmarks`` maps ticker -> buy-and-hold validation return (dashed line).
+    """
+    ev = logs.dropna(subset=["eval_return"])
+    tickers = sorted(ev["ticker"].unique())
+    fig, axes = plt.subplots(1, len(tickers), figsize=(4.5 * len(tickers), 3.8), squeeze=False)
+    for ax, ticker in zip(axes[0], tickers):
+        d_t = ev[ev["ticker"] == ticker]
+        for algo, d in d_t.groupby("algo"):
+            stats = d.groupby("env_step")["eval_return"].agg(["mean", "std"]).fillna(0)
+            ax.plot(stats.index, stats["mean"], color=METHOD_COLORS.get(algo),
+                    label=f"{algo} (n={d['seed'].nunique()} seeds)")
+            ax.fill_between(stats.index, stats["mean"] - stats["std"], stats["mean"] + stats["std"],
+                            color=METHOD_COLORS.get(algo), alpha=0.15)
+        if benchmarks and ticker in benchmarks:
+            ax.axhline(benchmarks[ticker], ls="--", color=METHOD_COLORS["buy_and_hold"],
+                       label="buy-and-hold")
+        ax.set(title=f"{ticker}: validation (2022)", xlabel="Environment steps",
+               ylabel="Validation terminal return")
+        ax.legend(fontsize=7)
+    fig.tight_layout()
+    _save(fig, out_path)
+
+
 def plot_portfolio_values(trajectories: dict, out_path, title: str = "") -> None:
     """Portfolio value over time, one line per method, normalized to V_0 = 1."""
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -140,6 +166,65 @@ def plot_portfolio_values(trajectories: dict, out_path, title: str = "") -> None
     ax.set(xlabel="Date", ylabel="Portfolio value / initial capital", title=title)
     ax.legend(fontsize=8)
     fig.autofmt_xdate()
+    _save(fig, out_path)
+
+
+METHOD_COLORS = {"buy_and_hold": "#7f7f7f", "qlearning": "#1f77b4", "sarsa": "#ff7f0e",
+                 "dqn": "#d62728", "weighted_ens": "#2ca02c", "equal_ens": "#9467bd"}
+
+
+def plot_method_returns(results: pd.DataFrame, order, out_path) -> None:
+    """Mean test terminal return per method and ticker; error bars = std across seeds."""
+    tickers = sorted(results["ticker"].unique())
+    seed_means = results.groupby(["method", "ticker", "seed"])["terminal_return"].mean()
+    stats = seed_means.groupby(["method", "ticker"]).agg(["mean", "std"]).fillna(0)
+    fig, ax = plt.subplots(figsize=(max(7, 2.2 * len(tickers)), 4))
+    width = 0.8 / len(order)
+    x = np.arange(len(tickers))
+    for i, m in enumerate(order):
+        vals = [stats.loc[(m, t)] if (m, t) in stats.index else pd.Series({"mean": np.nan, "std": 0})
+                for t in tickers]
+        ax.bar(x + (i - (len(order) - 1) / 2) * width, [v["mean"] for v in vals], width,
+               yerr=[v["std"] for v in vals], capsize=2, label=m, color=METHOD_COLORS.get(m))
+    ax.axhline(0, color="k", lw=0.8)
+    ax.set_xticks(x, tickers)
+    ax.set(ylabel="Mean test terminal return", title="Test terminal return (mean over windows; bars = std across seeds)")
+    ax.legend(fontsize=8, ncol=3)
+    _save(fig, out_path)
+
+
+def plot_loss_categories(results: pd.DataFrame, order, out_path) -> None:
+    """Share of test episodes in each terminal-loss category, per method."""
+    counts = (results.pivot_table(index="method", columns="loss_category", values="terminal_return",
+                                  aggfunc="count", fill_value=0)
+              .reindex(index=order, columns=[1, 2, 3, 4], fill_value=0))
+    share = counts.div(counts.sum(1), axis=0)
+    fig, ax = plt.subplots(figsize=(7, 4))
+    bottom = np.zeros(len(share))
+    colors = ["#2ca02c", "#ffdd57", "#ff7f0e", "#d62728"]
+    labels = ["1: profit / break-even", "2: loss <= 20%", "3: loss 20-40%", "4: loss > 40%"]
+    for c, col, lab in zip([1, 2, 3, 4], colors, labels):
+        ax.bar(share.index, share[c], bottom=bottom, color=col, label=lab)
+        bottom += share[c].to_numpy()
+    ax.set(ylabel="Share of test episodes", title="Terminal-loss categories (not max drawdown)")
+    ax.legend(fontsize=8, loc="lower right")
+    plt.setp(ax.get_xticklabels(), rotation=20)
+    _save(fig, out_path)
+
+
+def plot_action_frequencies(behavior: pd.DataFrame, out_path) -> None:
+    """Heatmap of how often each method picks each of the 9 actions on test."""
+    freq = behavior[[f"freq_a{a}" for a in range(N_ACTIONS)]]
+    fig, ax = plt.subplots(figsize=(8, 0.5 * len(freq) + 1.5))
+    im = ax.imshow(freq.to_numpy(), cmap="Blues", vmin=0, vmax=1, aspect="auto")
+    names = ["hold"] + [f"{s} {int(f * 100)}%" for s, f in list(ACTIONS.values())[1:]]
+    ax.set_xticks(range(N_ACTIONS), names, rotation=45, ha="right")
+    ax.set_yticks(range(len(freq)), freq.index)
+    for i in range(freq.shape[0]):
+        for j in range(freq.shape[1]):
+            ax.text(j, i, f"{freq.iat[i, j]:.2f}", ha="center", va="center", fontsize=7)
+    fig.colorbar(im, ax=ax, label="Share of test steps")
+    ax.set_title("Action frequencies on the test windows")
     _save(fig, out_path)
 
 
