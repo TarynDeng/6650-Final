@@ -17,7 +17,8 @@
     "dqn"
   ],
   "total_env_steps": 100000,
-  "git_commit": "b2e2863",
+  "git_commit": "e429884",
+  "code_sha256": "45485648564707b2d7c8440d95f055e1ff4505963457e272fd071870ae6e6eb9",
   "packages": {
     "python": "3.12.7",
     "numpy": "2.5.4",
@@ -138,7 +139,7 @@
       "batch_size": 64,
       "buffer_capacity": 50000,
       "learning_starts": 1000,
-      "tau": 0.005,
+      "target_update_rate": 0.005,
       "grad_clip": 10.0,
       "epsilon_start": 1.0,
       "epsilon_end": 0.05,
@@ -158,8 +159,13 @@
       ]
     },
     "ensemble": {
-      "tau": 0.05,
-      "tie_break": "top_weight_then_hold"
+      "temperature": 0.05,
+      "tie_break": "top_weight_then_hold",
+      "tie_break_sensitivity": [
+        "top_weight_then_hold",
+        "hold",
+        "largest_action"
+      ]
     }
   }
 }
