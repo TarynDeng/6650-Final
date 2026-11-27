@@ -5,9 +5,17 @@ import pandas as pd
 import pytest
 
 from src.config import DataConfig
-from src.environment import (CHECKSUM_FILE, RAW_DIR, file_sha256, load_price_data, load_ticker,
-                             read_checksums, validate_prices)
-from src.evaluation import paired_comparison, summarize
+from src.data import (
+    CHECKSUM_FILE,
+    RAW_DIR,
+    file_sha256,
+    load_price_data,
+    load_ticker,
+    read_checksums,
+    split_by_date,
+    validate_prices,
+)
+from tests.helpers import make_features
 
 CFG = DataConfig()
 
@@ -44,45 +52,21 @@ def test_validate_prices_catches_bad_data():
         validate_prices(good.drop(dates[10:20]), "X", "2020-01-01", str(dates[-1].date()))
     with pytest.raises(ValueError, match="covers"):
         validate_prices(good, "X", "2019-01-01", str(dates[-1].date()))
+    neg = good.copy()
+    neg.iloc[3, 0] = -1.0
+    with pytest.raises(ValueError, match="non-positive"):
+        validate_prices(neg, "X", "2020-01-01", str(dates[-1].date()))
+    with pytest.raises(ValueError, match="strictly increasing"):
+        validate_prices(good.iloc[::-1], "X", "2020-01-01", str(dates[-1].date()))
+    with pytest.raises(ValueError, match="strictly increasing"):
+        validate_prices(pd.concat([good, good.iloc[[5]]]).sort_index(), "X", "2020-01-01",
+                        str(dates[-1].date()))
 
 
-def _fake_results():
-    rows = []
-    for t in ("A", "B"):
-        for w in ("2023", "2024"):
-            base = {"A": 0.1, "B": -0.1}[t] + {"2023": 0.0, "2024": 0.05}[w]
-            rows.append({"method": "bh", "ticker": t, "window": w, "seed": -1,
-                         "terminal_return": base, "loss_category": 1 if base >= 0 else 2})
-            for s in range(3):
-                r = base - 0.02 + 0.01 * s
-                rows.append({"method": "rl", "ticker": t, "window": w, "seed": s,
-                             "terminal_return": r, "loss_category": 1 if r >= 0 else 2})
-    return pd.DataFrame(rows)
-
-
-def test_summary_uses_market_windows_as_samples():
-    s = summarize(_fake_results())
-    assert s.loc["rl", "n_windows"] == 4 and s.loc["rl", "n_episodes"] == 12
-    assert s.loc["bh", "n_windows"] == 4 and s.loc["bh", "n_episodes"] == 4
-    # Seed averaging: rl is exactly 0.01 below bh in every window.
-    assert s.loc["rl", "mean"] == pytest.approx(s.loc["bh", "mean"] - 0.01)
-    assert s.loc["rl", "seed_std"] == pytest.approx(0.01)
-    assert s.loc["rl", ["share_cat1", "share_cat2"]].sum() == pytest.approx(1.0)
-
-
-def test_paired_comparison():
-    c = paired_comparison(_fake_results(), "rl", "bh")
-    assert c["mean_diff"] == pytest.approx(-0.01)
-    assert c["a_wins"] == 0 and c["n_windows"] == 4 and c["n_years"] == 2
-    for k in ("ci_low", "ci_high", "ci_year_low", "ci_year_high"):
-        assert c[k] == pytest.approx(-0.01)
-
-
-def test_year_bootstrap_is_wider_when_years_disagree():
-    r = _fake_results()
-    r.loc[(r.method == "rl") & (r.window == "2024"), "terminal_return"] += 0.2
-    c = paired_comparison(r, "rl", "bh")
-    assert c["ci_year_low"] < c["mean_diff"] < c["ci_year_high"]
+def test_split_rejects_windows_without_data():
+    f = make_features(n=60)  # 2020 only: train/val/test windows from config are empty
+    with pytest.raises(ValueError, match="trading days"):
+        split_by_date(f, CFG)
 
 
 def test_empty_price_data_is_rejected():

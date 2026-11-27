@@ -9,12 +9,11 @@ import json
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from src.environment import TradingEnv, load_ticker  # noqa: E402
+from src.environment import load_ticker  # noqa: E402
 
 RES = ROOT / "results"
 T = RES / "tables"

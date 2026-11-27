@@ -1,9 +1,10 @@
 """Default experiment settings, in one place.
 
-Every value here is a *default chosen to get the pipeline running*; the team
-should confirm or change them (see "Open Decisions" in the README). Code reads
-settings from these dataclasses instead of hard-coding constants, so changing a
-decision means editing this file only.
+Every value here is a placeholder default chosen to get the pipeline running;
+the team should confirm or change them (see "Decisions and their status" in the
+README). Code reads settings from these dataclasses instead of hard-coding
+constants, so changing a decision means editing this file and re-running all
+three phases.
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ class DQNConfig:
     batch_size: int = 64
     buffer_capacity: int = 50_000
     learning_starts: int = 1_000
-    tau: float = 0.005  # soft target-network update, as in HW-2
+    target_update_rate: float = 0.005  # soft target-network update (often called tau), as in HW-2
     grad_clip: float = 10.0
     epsilon_start: float = 1.0
     epsilon_end: float = 0.05
@@ -88,11 +89,16 @@ class TrainConfig:
 
 @dataclass(frozen=True)
 class EnsembleConfig:
-    tau: float = 0.05  # softmax temperature on mean validation terminal return
-    # Tie-break, fixed in advance: among tied actions, take the one chosen by
-    # the highest-weight policy; if that is still tied (equal weights), take
-    # Hold (0) when it is tied, otherwise the smallest action index.
+    # Softmax temperature on each member's 2022 validation terminal return.
+    # With returns that differ by 0.1-0.3, tau = 0.05 puts more than half the
+    # weight on one member, so the weighted vote then follows that member.
+    temperature: float = 0.05
+    # Tie-break, fixed before any results were seen: among tied actions, take
+    # the one chosen by the single highest-weight member; otherwise (e.g. equal
+    # weights) take Hold (0) if it is tied, else the smallest action index.
     tie_break: str = "top_weight_then_hold"
+    # Alternative rules evaluated in phase 2 as a sensitivity check only.
+    tie_break_sensitivity: tuple[str, ...] = ("top_weight_then_hold", "hold", "largest_action")
 
 
 @dataclass(frozen=True)

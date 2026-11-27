@@ -37,18 +37,18 @@ class Standardizer:
     """Z-score the market features with training-split mean / std."""
 
     def __init__(self):
-        self.mean = self.std = None
+        self.mean = self.scale = None
 
-    def fit(self, train_features: pd.DataFrame) -> "Standardizer":
+    def fit(self, train_features: pd.DataFrame) -> Standardizer:
         x = train_features[MARKET_FEATURES].to_numpy(dtype=np.float64)
-        self.mean, self.std = x.mean(0), x.std(0) + 1e-8
+        self.mean, self.scale = x.mean(0), x.std(0) + 1e-8
         return self
 
     def transform(self, obs) -> np.ndarray:
         obs = np.asarray(obs, dtype=np.float32)
         out = obs.copy()
         k = len(MARKET_FEATURES)
-        out[..., :k] = (obs[..., :k] - self.mean) / self.std
+        out[..., :k] = (obs[..., :k] - self.mean) / self.scale
         return out
 
 
@@ -104,8 +104,9 @@ class DQNAgent:
     name = "dqn"
 
     def __init__(self, standardizer: Standardizer, *, gamma: float,
-                 cfg: DQNConfig = DQNConfig(), seed: int | None = None):
-        self.std = standardizer
+                 cfg: DQNConfig | None = None, seed: int | None = None):
+        cfg = cfg or DQNConfig()
+        self.standardizer = standardizer
         self.gamma = gamma
         self.cfg = cfg
         self.epsilon = cfg.epsilon_start
@@ -120,14 +121,13 @@ class DQNAgent:
         self.optimizer = torch.optim.AdamW(self.policy_net.parameters(), lr=cfg.lr, amsgrad=True)
         self.loss_fn = nn.SmoothL1Loss()  # Huber loss
         self.buffer = ReplayBuffer(cfg.buffer_capacity, dim, buffer_seq)
-        self.n_updates = 0
 
     def set_epsilon(self, epsilon: float) -> None:
         self.epsilon = epsilon
 
     @torch.no_grad()
     def q_values(self, obs) -> np.ndarray:
-        x = torch.as_tensor(self.std.transform(obs)).unsqueeze(0)
+        x = torch.as_tensor(self.standardizer.transform(obs)).unsqueeze(0)
         return self.policy_net(x)[0].numpy()
 
     def act(self, obs, explore: bool = True) -> int:
@@ -137,8 +137,8 @@ class DQNAgent:
 
     def update(self, obs, action, reward, next_obs, next_action, terminated) -> None:
         """Store the transition, then take one gradient step once warmed up."""
-        self.buffer.push(self.std.transform(obs), action, reward,
-                         self.std.transform(next_obs), terminated)
+        self.buffer.push(self.standardizer.transform(obs), action, reward,
+                         self.standardizer.transform(next_obs), terminated)
         if len(self.buffer) < max(self.cfg.learning_starts, self.cfg.batch_size):
             return
         s, a, r, s2, done = self.buffer.sample(self.cfg.batch_size)
@@ -152,9 +152,8 @@ class DQNAgent:
         self.optimizer.step()
         # Soft update: theta' <- tau * theta + (1 - tau) * theta'
         with torch.no_grad():
-            for p_t, p in zip(self.target_net.parameters(), self.policy_net.parameters()):
-                p_t.mul_(1.0 - self.cfg.tau).add_(self.cfg.tau * p)
-        self.n_updates += 1
+            for p_t, p in zip(self.target_net.parameters(), self.policy_net.parameters(), strict=True):
+                p_t.mul_(1.0 - self.cfg.target_update_rate).add_(self.cfg.target_update_rate * p)
 
     def snapshot(self):
         return copy.deepcopy(self.policy_net.state_dict())
@@ -165,11 +164,11 @@ class DQNAgent:
 
     def save(self, path) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        torch.save({"policy_net": self.policy_net.state_dict(), "mean": self.std.mean,
-                    "std": self.std.std, "gamma": self.gamma}, path)
+        torch.save({"policy_net": self.policy_net.state_dict(), "mean": self.standardizer.mean,
+                    "scale": self.standardizer.scale, "gamma": self.gamma}, path)
 
     def load(self, path) -> None:
         d = torch.load(path, weights_only=False)
         self.policy_net.load_state_dict(d["policy_net"])
         self.target_net.load_state_dict(d["policy_net"])
-        self.std.mean, self.std.std = d["mean"], d["std"]
+        self.standardizer.mean, self.standardizer.scale = d["mean"], d["scale"]

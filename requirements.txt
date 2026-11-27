@@ -7,3 +7,4 @@ torch==2.15.0          # CPU build is enough: pip install torch --index-url http
 matplotlib==3.11.2
 yfinance==1.8.0        # only needed to download tickers that are not in data/raw/
 pytest==9.2.0
+ruff==0.17.6           # linter (settings in pyproject.toml)

@@ -6,13 +6,16 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.coverage
+htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Virtual environments
+# Virtual environments and secrets
 .venv/
 venv/
-env/
+/env/
+.env
 
 # Jupyter
 .ipynb_checkpoints/
@@ -27,9 +30,18 @@ data/raw/*
 !data/raw/*.csv
 !data/raw/SHA256SUMS
 
-# Results, logs, and models (keep the folder and its README, not the files)
+# Results: models and figures are not committed; the small tables, learning-curve
+# logs and the run manifest of the reported run are, so README numbers can be
+# checked from a fresh clone.
 results/*
 !results/README.md
+!results/run_manifest.json
+!results/tables/
+results/tables/*
+!results/tables/*.csv
+!results/logs/
+results/logs/*
+!results/logs/*.csv
 runs/
 wandb/
 ray_results/
@@ -60,3 +72,5 @@ paper/main.pdf
 # Slides build dependencies
 slides/node_modules/
 slides/*.pdf
+slides/~$*.pptx
+results_quick/

@@ -5,14 +5,9 @@ import pandas as pd
 import pytest
 
 from src.config import EnvConfig
-from src.environment import N_ACTIONS, OBS_NAMES, TradingEnv, compute_market_features
-
-
-def make_features(n=80, seed=0):
-    rng = np.random.default_rng(seed)
-    close = 100 * np.exp(np.cumsum(rng.normal(0, 0.02, n + 25)))
-    dates = pd.bdate_range("2020-01-01", periods=n + 25)
-    return compute_market_features(pd.DataFrame({"Close": close}, index=dates)).iloc[:n]
+from src.data import compute_market_features
+from src.environment import N_ACTIONS, OBS_NAMES, TradingEnv
+from tests.helpers import make_features
 
 
 def run_actions(env, actions):
@@ -29,12 +24,18 @@ def run_actions(env, actions):
     return v0, np.array(rewards), infos
 
 
-def test_features_have_no_nans_and_use_past_only():
-    df = make_features()
-    assert not df.isna().any().any()
-    # ret5 on day t only depends on closes up to day t.
-    t = 30
-    assert np.isclose(df["ret5"].iloc[t], np.log(df["Close"].iloc[t] / df["Close"].iloc[t - 5]))
+def test_features_have_no_nans_and_use_only_past_prices():
+    rng = np.random.default_rng(3)
+    close = pd.Series(100 * np.exp(np.cumsum(rng.normal(0, 0.02, 120))),
+                      index=pd.bdate_range("2020-01-01", periods=120))
+    base = compute_market_features(close.to_frame("Close"))
+    assert not base.isna().any().any()
+    t = 70
+    changed = close.copy()
+    changed.iloc[t + 1:] *= 1.5  # change every price after day t
+    after = compute_market_features(changed.to_frame("Close"))
+    day = close.index[t]
+    pd.testing.assert_frame_equal(base.loc[:day], after.loc[:day])
 
 
 def test_rewards_telescope_to_log_terminal_value():
@@ -132,6 +133,23 @@ def test_random_training_windows_have_fixed_length():
 def test_tiny_leftover_trades_are_skipped():
     env = TradingEnv(make_features(), EnvConfig(fee_rate=0.001))
     env.reset(seed=0)
-    env.step(4)  # all cash into stock; only float dust can be left
-    _, _, _, _, info = env.step(4)  # "buy" again with ~0 cash
+    env.cash = 0.004  # less than one cent to spend
+    _, _, _, _, info = env.step(4)
     assert info["traded_shares"] == 0 and info["fee"] == 0
+    env.shares = 0.004 / env.close[env._t]  # holdings worth less than one cent
+    _, _, _, _, info = env.step(8)
+    assert info["traded_shares"] == 0
+
+
+def test_integer_shares_mode_keeps_whole_shares():
+    env = TradingEnv(make_features(), EnvConfig(fee_rate=0.001, fractional_shares=False))
+    rng = np.random.default_rng(4)
+    obs, info = env.reset(seed=0)
+    v0, total = info["portfolio_value"], 0.0
+    for a in rng.integers(0, N_ACTIONS, 70):
+        _, r, _, trunc, info = env.step(a)
+        total += r
+        assert float(info["shares"]).is_integer() and info["cash"] >= 0
+        if trunc:
+            break
+    assert np.isclose(total, np.log(info["portfolio_value"] / v0))

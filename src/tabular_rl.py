@@ -54,9 +54,9 @@ class StateDiscretizer:
     def n_states(self) -> int:
         return int(np.prod(self.n_bins) * self.n_position_levels)
 
-    def fit(self, train_features: pd.DataFrame) -> "StateDiscretizer":
+    def fit(self, train_features: pd.DataFrame) -> StateDiscretizer:
         self.edges = []
-        for name, n in zip(MARKET_FEATURES, self.n_bins):
+        for name, n in zip(MARKET_FEATURES, self.n_bins, strict=True):
             qs = np.linspace(0, 1, n + 1)[1:-1]  # interior quantiles
             self.edges.append(np.quantile(train_features[name].to_numpy(), qs))
         return self
@@ -76,7 +76,8 @@ class _TabularAgent:
     name = "tabular"
 
     def __init__(self, discretizer: StateDiscretizer, *, gamma: float,
-                 cfg: TabularConfig = TabularConfig(), seed: int | None = None):
+                 cfg: TabularConfig | None = None, seed: int | None = None):
+        cfg = cfg or TabularConfig()
         self.disc = discretizer
         self.gamma = gamma
         self.cfg = cfg

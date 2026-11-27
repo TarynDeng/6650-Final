@@ -1,0 +1,165 @@
+{
+  "tickers": [
+    "AAPL",
+    "JPM",
+    "XOM"
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "algos": [
+    "qlearning",
+    "sarsa",
+    "dqn"
+  ],
+  "total_env_steps": 100000,
+  "git_commit": "b2e2863",
+  "packages": {
+    "python": "3.12.7",
+    "numpy": "2.5.4",
+    "pandas": "3.1.1",
+    "gymnasium": "1.2.2",
+    "torch": "2.15.0",
+    "matplotlib": "3.11.2"
+  },
+  "data_sha256": {
+    "AAPL": "727a3d43916217c1d83f56f92e5335117f5946646c93fdf24ce44a014932fd98",
+    "JPM": "fc125a574e90e2e1a7c9aac9b9f7be8b5c01eeb3cef99ad929a66d1c2280065e",
+    "XOM": "b76cd0e70be655c0c4d774056b9a7628da9076c557b48151bfb5914bad5305d9"
+  },
+  "runs": [
+    "qlearning_AAPL_seed0",
+    "sarsa_AAPL_seed0",
+    "dqn_AAPL_seed0",
+    "qlearning_AAPL_seed1",
+    "sarsa_AAPL_seed1",
+    "dqn_AAPL_seed1",
+    "qlearning_AAPL_seed2",
+    "sarsa_AAPL_seed2",
+    "dqn_AAPL_seed2",
+    "qlearning_AAPL_seed3",
+    "sarsa_AAPL_seed3",
+    "dqn_AAPL_seed3",
+    "qlearning_AAPL_seed4",
+    "sarsa_AAPL_seed4",
+    "dqn_AAPL_seed4",
+    "qlearning_JPM_seed0",
+    "sarsa_JPM_seed0",
+    "dqn_JPM_seed0",
+    "qlearning_JPM_seed1",
+    "sarsa_JPM_seed1",
+    "dqn_JPM_seed1",
+    "qlearning_JPM_seed2",
+    "sarsa_JPM_seed2",
+    "dqn_JPM_seed2",
+    "qlearning_JPM_seed3",
+    "sarsa_JPM_seed3",
+    "dqn_JPM_seed3",
+    "qlearning_JPM_seed4",
+    "sarsa_JPM_seed4",
+    "dqn_JPM_seed4",
+    "qlearning_XOM_seed0",
+    "sarsa_XOM_seed0",
+    "dqn_XOM_seed0",
+    "qlearning_XOM_seed1",
+    "sarsa_XOM_seed1",
+    "dqn_XOM_seed1",
+    "qlearning_XOM_seed2",
+    "sarsa_XOM_seed2",
+    "dqn_XOM_seed2",
+    "qlearning_XOM_seed3",
+    "sarsa_XOM_seed3",
+    "dqn_XOM_seed3",
+    "qlearning_XOM_seed4",
+    "sarsa_XOM_seed4",
+    "dqn_XOM_seed4"
+  ],
+  "config": {
+    "data": {
+      "tickers": [
+        "AAPL",
+        "JPM",
+        "XOM"
+      ],
+      "download_start": "2014-10-01",
+      "download_end": "2026-01-01",
+      "train": [
+        "2015-01-01",
+        "2021-12-31"
+      ],
+      "val": [
+        "2022-01-01",
+        "2022-12-31"
+      ],
+      "test_windows": [
+        [
+          "2023-01-01",
+          "2023-12-31"
+        ],
+        [
+          "2024-01-01",
+          "2024-12-31"
+        ],
+        [
+          "2025-01-01",
+          "2025-12-31"
+        ]
+      ],
+      "adjusted": true
+    },
+    "env": {
+      "initial_cash": 10000.0,
+      "fee_rate": 0.001,
+      "fractional_shares": true,
+      "train_episode_len": 252
+    },
+    "tabular": {
+      "n_bins": [
+        3,
+        3,
+        3
+      ],
+      "n_position_levels": 5,
+      "alpha": 0.05,
+      "epsilon_start": 1.0,
+      "epsilon_end": 0.05,
+      "epsilon_decay_frac": 0.5
+    },
+    "dqn": {
+      "hidden_sizes": [
+        64,
+        64
+      ],
+      "lr": 0.0005,
+      "batch_size": 64,
+      "buffer_capacity": 50000,
+      "learning_starts": 1000,
+      "tau": 0.005,
+      "grad_clip": 10.0,
+      "epsilon_start": 1.0,
+      "epsilon_end": 0.05,
+      "epsilon_decay_frac": 0.5
+    },
+    "train": {
+      "gamma": 0.99,
+      "total_env_steps": 100000,
+      "eval_every": 5000,
+      "keep_best_on_val": false,
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "ensemble": {
+      "tau": 0.05,
+      "tie_break": "top_weight_then_hold"
+    }
+  }
+}
