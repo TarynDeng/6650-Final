@@ -191,7 +191,37 @@ Every method trades each test year once with exploration off. Buy-and-hold buys 
 
 ## 4. Latest results
 
-The final run with the current settings is in progress; this section will be updated with its numbers. To reproduce it, run the three commands in [Quick start, step 4](#1-quick-start).
+Full run at commit `b2e2863` with the default settings (3 stocks × 5 seeds, 100,000 steps per run, about 14 minutes). Re-run with the three commands in [Quick start, step 4](#1-quick-start); `results/run_manifest.json` records exactly what was used.
+
+**Test years 2023-2025: terminal return per method.** Each number is the mean over the 9 stock-years, after averaging the 5 seeds within each stock-year.
+
+| Method | Mean return | Median | Spread across seeds | Episodes ending with a loss | Trades per year | Fees per year |
+|---|---:|---:|---:|---:|---:|---:|
+| Buy-and-hold | **+25.8%** | +29.5% | – | 11% | 1 | $10 |
+| Q-learning | +18.5% | +23.9% | 6.0 pp | 24% | 86 | $309 |
+| Equal-weight ensemble | +17.1% | +18.2% | 6.7 pp | 27% | 95 | $287 |
+| Weighted ensemble | +8.0% | +9.5% | 9.6 pp | 20% | 125 | $382 |
+| DQN | +7.4% | +4.5% | 10.2 pp | 27% | 153 | $414 |
+| SARSA | +6.9% | +11.0% | 3.8 pp | 27% | 99 | $351 |
+
+"Spread across seeds" is `seed_std`, in percentage points; fees are on $10,000 of starting capital. No episode lost more than 20% (loss categories 3 and 4 never occurred).
+
+**Paired comparisons** (A minus B, stock-year by stock-year; see [Output files](#7-output-files) for how to read the intervals):
+
+| Comparison | Mean difference | A wins | 95% interval (stock-years) | 95% interval (whole years) |
+|---|---:|---:|---|---|
+| Q-learning − buy-and-hold | −7.3 pp | 1 / 9 | −10.3 to −3.5 | −10.0 to −4.5 |
+| Q-learning − DQN | +11.2 pp | 7 / 9 | +2.5 to +19.2 | +10.5 to +12.2 |
+| SARSA − DQN | −0.4 pp | 3 / 9 | −5.0 to +4.5 | −1.2 to +0.7 |
+| Equal-weight − weighted ensemble | +9.0 pp | 6 / 9 | +2.9 to +15.4 | +4.8 to +12.9 |
+| Equal-weight ensemble − Q-learning | −1.5 pp | 3 / 9 | −4.3 to +1.6 | −3.9 to +1.0 |
+
+**What this suggests (preliminary; see [limitations](#9-known-limitations)):**
+
+- **RQ1.** No RL method beats buy-and-hold in 2023-2025, a strongly rising market. Q-learning comes closest because it mostly stays invested. Q-learning beats DQN in 7 of 9 stock-years; SARSA and DQN are about even.
+- **RQ2.** All methods have similar loss profiles: 11-27% of test episodes end with a small loss (under 20%), and none with a larger one. The test period has too few falling markets to say more.
+- **RQ3.** DQN varies most between seeds (10.2 pp, versus 3.8-6.0 pp for the tabular methods) and trades the most. The validation learning curves (`phase3_learning_curves.png`) do not improve steadily with training, and for XOM both tabular methods get worse as training goes on, a sign of overfitting to the training years.
+- **RQ4.** The equal-weight ensemble is about as good as Q-learning and much better than the weighted one. The weights come from 2022, a falling market, which rewarded the agents that held less stock (on average SARSA 0.40, DQN 0.43, Q-learning 0.17). In the rising test years the reverse was true, so validation-based weights picked the wrong agents.
 
 ---
 
