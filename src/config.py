@@ -76,10 +76,13 @@ class DQNConfig:
 class TrainConfig:
     gamma: float = 0.99  # shared by all algorithms
     total_env_steps: int = 100_000  # same step budget for every algorithm
-    eval_every: int = 5_000  # validation check interval, in env steps
-    # Keep the snapshot with the best validation terminal return (applied to
-    # every algorithm alike). This uses the validation set for model selection.
-    keep_best_on_val: bool = True
+    eval_every: int = 5_000  # validation check interval, in env steps (monitoring only)
+    # False: every algorithm is evaluated with its final model after the full
+    # step budget. The validation year is then used for one thing only, the
+    # ensemble weights. (True would keep the snapshot with the best validation
+    # return, but then the same year both selects checkpoints and sets the
+    # weights, which inflates the noisiest learner's validation score.)
+    keep_best_on_val: bool = False
     seeds: tuple[int, ...] = (0, 1, 2, 3, 4)
 
 

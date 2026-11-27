@@ -151,7 +151,7 @@ Every item below has a default in [`src/config.py`](src/config.py) so the code r
 | Training episodes | Random 252-day windows inside 2015-2021 |
 | Tabular state | ret5, ret20, vol20 in 3 quantile bins each (fit on train) x 5 position levels = 135 states |
 | DQN | HW-2-style PyTorch DQN: MLP 64-64, replay, soft target update tau = 0.005 |
-| Budget and selection | 100k env steps per run, gamma = 0.99, 5 seeds; the snapshot with the best validation return is kept for every algorithm |
+| Budget and selection | 100k env steps per run, gamma = 0.99, 5 seeds; every algorithm uses its final model (no checkpoint selection), so the validation year is used only for the ensemble weights |
 | Ensemble | tau = 0.05; ties go to the top-weighted policy's action, then Hold |
 
 - [ ] Data source, final stock list, and date range
