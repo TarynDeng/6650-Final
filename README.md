@@ -4,7 +4,7 @@
 
 DSAN 6650 (Reinforcement Learning), Final Project. Presentation due **12/2**.
 
-> **Status:** project skeleton. The code in `src/` is stubs only (`NotImplementedError`). The full proposal, including all equations, is in [`docs/proposal.md`](docs/proposal.md). Items marked *tentative* are not final; see [Open Decisions](#open-decisions).
+> **Status:** Phase 1 pipeline works end to end. Data loading, the trading environment, Q-learning, SARSA, DQN, buy-and-hold, and evaluation are implemented and tested. The ensemble (Phase 2) and the final comparison (Phase 3) are not implemented yet. Every setting the team has not decided yet has a default in [`src/config.py`](src/config.py); see [Open Decisions](#open-decisions). The full proposal, including all equations, is in [`docs/proposal.md`](docs/proposal.md).
 
 ## Overview
 
@@ -83,12 +83,15 @@ About 3 stocks and about 5 training seeds per algorithm (both tentative). The te
 │   └── README.md               # output layout and naming (outputs are git-ignored)
 ├── src/
 │   ├── __init__.py
-│   ├── environment.py          # data loading, features, trading env, action adapter
+│   ├── config.py               # all default settings (team to confirm)
+│   ├── environment.py          # data loading, features, trading env
 │   ├── tabular_rl.py           # state discretization, Q-learning, SARSA
 │   ├── deep_rl.py              # DQN (replay buffer, target network)
-│   ├── ensemble.py             # softmax weights, weighted / equal-weight voting
-│   └── evaluation.py           # terminal return / loss, stability, plots
-├── requirements.txt            # tentative dependencies
+│   ├── ensemble.py             # softmax weights, weighted / equal-weight voting (TODO)
+│   ├── evaluation.py           # terminal return / loss, rollouts, buy-and-hold, plots
+│   └── training.py             # one training loop shared by all algorithms
+├── tests/                      # accounting and agent tests (pytest)
+├── requirements.txt
 └── README.md
 ```
 
@@ -100,7 +103,19 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` is tentative until the environment and data source are chosen. `experiments/run_experiments.py` defines the planned command-line interface but is not implemented yet.
+Run the tests, then Phase 1. The first run downloads daily prices from yfinance into `data/raw/` (git-ignored); later runs read the cached CSVs.
+
+```bash
+python -m pytest -q tests
+python experiments/run_experiments.py --phase 1 --tickers AAPL --seeds 0   # one stock, one seed (~1 min)
+python experiments/run_experiments.py --phase 1                            # all tickers and seeds in src/config.py
+```
+
+Outputs go to `results/` (see [`results/README.md`](results/README.md)):
+- `tables/phase1_{val,test}.csv`: one row per method, ticker, seed, and window;
+- `logs/{algo}_{TICKER}_seed{n}.csv`: learning curves;
+- `models/`: trained Q-tables and DQN weights;
+- `figures/`: learning curves and portfolio-value plots.
 
 Build the paper (needs a TeX distribution with `latexmk`):
 
@@ -118,6 +133,19 @@ cd paper && latexmk -pdf main.tex
 6. Optional: DQN on the discrete state encoding as a control experiment.
 
 ## Open Decisions
+
+Every item below has a default in [`src/config.py`](src/config.py) so the code runs today. The defaults are placeholders: confirm or change them, and record the decision here.
+
+| Decision | Current default |
+|---|---|
+| Data source, tickers, dates | yfinance, adjusted prices; AAPL, JPM, XOM; 2015-2025 |
+| Environment | Small custom Gymnasium env (Gym Trading Env uses target-position actions, not cash-fraction orders) |
+| Execution and costs | Fill at day t's close, mark at day t+1's close; 0.1% fee per trade; fractional shares |
+| Training episodes | Random 252-day windows inside 2015-2021 |
+| Tabular state | ret5, ret20, vol20 in 3 quantile bins each (fit on train) x 5 position levels = 135 states |
+| DQN | HW-2-style PyTorch DQN: MLP 64-64, replay, soft target update tau = 0.005 |
+| Budget and selection | 100k env steps per run, gamma = 0.99, 5 seeds; the snapshot with the best validation return is kept for every algorithm |
+| Ensemble | tau = 0.05; ties go to the top-weighted policy's action, then Hold |
 
 - [ ] Data source, final stock list, and date range
 - [ ] Trading environment, and how it supports discrete trade sizing
