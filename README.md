@@ -191,7 +191,7 @@ Every method trades each test year once with exploration off. Buy-and-hold buys 
 
 ## 4. Latest results
 
-<<RESULTS>>
+The final run with the current settings is in progress; this section will be updated with its numbers. To reproduce it, run the three commands in [Quick start, step 4](#1-quick-start).
 
 ---
 
